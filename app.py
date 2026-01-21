@@ -381,13 +381,24 @@ st.markdown(
 # ==================================================
 valores_referencia = {}
 
+valores_referencia = {}
+
 if not modo_critico:
     from control_actas.bd_precios import cargar_valores_referencia
 
-    db_path = construir_db_path(get_precios_root(), st.session_state["precios_version"])
-    st.session_state["db_precios_path"] = db_path
-
-    valores_referencia = cargar_valores_referencia(db_path)
+    try:
+        valores_referencia = cargar_valores_referencia(db_path)
+    except FileNotFoundError:
+        st.warning(
+            "⚠️ No se encontró la base de precios en el entorno actual. "
+            "En Streamlit Cloud debes cargarla desde Drive (o subirla al repo). "
+            "Por ahora, se continúa sin precios."
+        )
+        valores_referencia = {}
+    except Exception as e:
+        st.error("Error cargando la base de precios.")
+        st.exception(e)
+        valores_referencia = {}
 else:
     st.session_state["db_precios_path"] = None
 
@@ -642,6 +653,7 @@ with tab_based:
 
 
         
+
 
 
 
