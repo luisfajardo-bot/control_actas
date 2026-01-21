@@ -1,8 +1,6 @@
 import os
-from turtle import color
 import streamlit as st
 import pandas as pd
-
 from pathlib import Path
 
 from control_actas_local import get_backend
@@ -25,7 +23,61 @@ def formatear_numeros_df(df: pd.DataFrame) -> pd.DataFrame:
 
     return df_fmt
 
-#________________________________________________________________
+
+# ==================================================
+# CONFIG CENTRAL (RUTAS + DEFAULTS + HELPERS)
+# ==================================================
+REPO_ROOT = Path(__file__).resolve().parent
+
+# 1) Donde viven tus proyectos (actas/salidas)
+#    En LOCAL puedes dejarlo apuntando a tu Drive.
+#    En CLOUD lo ideal es que esto sea relativo al repo o temporal.
+DEFAULT_PROYECTOS_ROOT_LOCAL = Path(r"G:\Mi unidad\Subcontratos")  # <-- cámbialo fácil aquí
+
+# 2) Donde viven tus bases de precios por año/versión
+DEFAULT_PRECIOS_ROOT_LOCAL = Path(r"G:\Mi unidad\Subcontratos\precios_referencia")  # <-- y aquí
+
+# Defaults de filtros
+DEFAULT_ANIO_PROY = 2026
+DEFAULT_PRECIOS_VERSION = "2025"
+
+
+def detectar_carpetas_anio(root: Path, fallback: list[int]) -> list[int]:
+    """Lista subcarpetas '2025', '2026', etc. Si no existe, usa fallback."""
+    if root.exists():
+        yrs = []
+        for p in root.iterdir():
+            if p.is_dir() and p.name.isdigit():
+                yrs.append(int(p.name))
+        if yrs:
+            return sorted(yrs)
+    return fallback
+
+
+def detectar_versiones_precios(root: Path, fallback: list[str]) -> list[str]:
+    """Lista carpetas de versiones dentro de PRECIOS_ROOT (ej: 2024, 2025)."""
+    if root.exists():
+        vs = []
+        for p in root.iterdir():
+            if p.is_dir():
+                vs.append(p.name)
+        if vs:
+            return sorted(vs)
+    return fallback
+
+
+def get_proyectos_root() -> Path:
+    # Si luego quieres hacerlo cloud-friendly: puedes usar st.secrets o variables de entorno
+    return DEFAULT_PROYECTOS_ROOT_LOCAL
+
+
+def get_precios_root() -> Path:
+    return DEFAULT_PRECIOS_ROOT_LOCAL
+
+
+def construir_db_path(precios_root: Path, version: str) -> str:
+    return str(precios_root / str(version) / "precios_referencia.db")
+
 
 # --------------------------------------------------
 # Configuración básica de la página
@@ -35,6 +87,7 @@ st.set_page_config(
     page_icon="📑",
     layout="wide",
 )
+
 # ==================================================
 # TEMA (OSCURO / CLARO)
 # ==================================================
@@ -73,7 +126,8 @@ Tema = st.sidebar.selectbox(
 st.session_state.Tema = Tema
 C = THEMES[Tema]
 
-st.markdown(f"""
+st.markdown(
+    f"""
 <style>
 
 /* ================= VARIABLES ================= */
@@ -235,8 +289,9 @@ button[data-baseweb="button"] svg {{
 }}
 
 </style>
-""", unsafe_allow_html=True)
-
+""",
+    unsafe_allow_html=True,
+)
 
 # --------------------------------------------------
 # Tus constantes
@@ -250,8 +305,8 @@ LOOKER_LINKS = {
     "Corredor Verde": "https://lookerstudio.google.com/reporting/CORREDORXXXX",
 }
 MESES = [
-    "enero","febrero","marzo","abril","mayo","junio",
-    "julio","agosto","septiembre","octubre","noviembre","diciembre"
+    "enero", "febrero", "marzo", "abril", "mayo", "junio",
+    "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"
 ]
 
 # --------------------------------------------------
@@ -259,10 +314,8 @@ MESES = [
 # --------------------------------------------------
 st.sidebar.title("Filtros")
 st.sidebar.markdown("---")
-modo_critico = st.sidebar.toggle(
-    "🔥 Modo crítico (solo actividades sensibles)",
-    value=False
-)
+
+modo_critico = st.sidebar.toggle("🔥 Modo crítico (solo actividades sensibles)", value=False)
 modo_backend = "critico" if modo_critico else "normal"
 backend = get_backend(modo_backend)
 
@@ -272,10 +325,35 @@ correr_todos_los_meses = backend.get("correr_todos_los_meses")  # puede ser None
 listar_carpetas_mes = backend["listar_carpetas_mes"]
 
 proyecto = st.sidebar.selectbox("Proyecto", PROYECTOS)
-anio = st.sidebar.selectbox("Año", list(range(2025, 2035)))
+
+# --- Nuevo: Año del PROYECTO (actas/salidas/histórico) ---
+proyectos_root = get_proyectos_root()
+anios_proyecto = detectar_carpetas_anio(proyectos_root, fallback=list(range(2025, 2035)))
+
+anio_proyecto = st.sidebar.selectbox(
+    "Año (Proyecto / Actas / Salidas)",
+    anios_proyecto,
+    index=anios_proyecto.index(st.session_state.get("anio_proyecto", DEFAULT_ANIO_PROY))
+    if st.session_state.get("anio_proyecto", DEFAULT_ANIO_PROY) in anios_proyecto else 0
+)
+st.session_state["anio_proyecto"] = anio_proyecto
+
 mes = st.sidebar.selectbox("Mes", MESES)
 
-nombre_carpeta_mes = f"{mes}{anio}"
+# --- Nuevo: Base de precios (independiente) ---
+precios_root = get_precios_root()
+versiones_precios = detectar_versiones_precios(precios_root, fallback=["2024", "2025", "2026"])
+
+default_version = st.session_state.get("precios_version", DEFAULT_PRECIOS_VERSION)
+precios_version = st.sidebar.selectbox(
+    "Base de precios (versión/año)",
+    versiones_precios,
+    index=versiones_precios.index(default_version) if default_version in versiones_precios else 0
+)
+st.session_state["precios_version"] = precios_version
+
+# Nombre carpeta mes sigue usando el AÑO DEL PROYECTO
+nombre_carpeta_mes = f"{mes}{anio_proyecto}"
 
 st.sidebar.markdown("---")
 procesar_btn = st.sidebar.button("🚀 Procesar actas")
@@ -288,75 +366,72 @@ st.caption("Revisión automática de valores unitarios de cada actividad por pro
 
 st.markdown(
     f"### Proyecto seleccionado: **{proyecto}**  \n"
-    f"Periodo: **{mes.capitalize()} {anio}**  \n"
-    f"Carpeta: `{nombre_carpeta_mes}`"
+    f"Periodo: **{mes.capitalize()} {anio_proyecto}**  \n"
+    f"Carpeta: `{nombre_carpeta_mes}`  \n"
+    f"Base de precios: **{precios_version}**"
 )
 
-#________________________________________________
-# ✅ SOLO CONFIGURACIÓN DE RUTA DE LA BD (SIN CARGAR NADA)
-from pathlib import Path
-
-PRECIOS_ROOT = Path(r"G:\Mi unidad\Subcontratos\precios_referencia")
-
-# 👇 usa el año del dropdown (variable `anio`)
-version = str(anio)  # por compatibilidad con tu lógica de "version"
-st.session_state["precios_version"] = version  # opcional: por si en otros lados lo usas
-
+# ==================================================
+# BD PRECIOS (solo NORMAL)
+# ==================================================
 valores_referencia = {}
 
 if not modo_critico:
-    # NORMAL: existe BD y se carga
     from control_actas.bd_precios import cargar_valores_referencia
 
-    db_path = str(PRECIOS_ROOT / version / "precios_referencia.db")
-    st.session_state.db_precios_path = db_path
+    db_path = construir_db_path(get_precios_root(), st.session_state["precios_version"])
+    st.session_state["db_precios_path"] = db_path
 
-    valores_referencia = cargar_valores_referencia(st.session_state.db_precios_path)
-
+    valores_referencia = cargar_valores_referencia(db_path)
 else:
-    # CRÍTICO: no BD (o no se usa aquí)
-    st.session_state.db_precios_path = None
-
-
+    st.session_state["db_precios_path"] = None
 
 # --------------------------------------------------
 # TABS: una para ejecutar, otra para visualizar
 # --------------------------------------------------
-tab_run, tab_resumen, tab_informes, tab_based = st.tabs(["▶ Ejecutar proceso", "📊 Ver resúmenes", "📒📋 Ver informes", "🧾 Bases de precios"])
-col1, col2 = st.columns(2)
+tab_run, tab_resumen, tab_informes, tab_based = st.tabs(
+    ["▶ Ejecutar proceso", "📊 Ver resúmenes", "📒📋 Ver informes", "🧾 Bases de precios"]
+)
 
 # --------------------------------------------------
 # TAB 1: ejecutar proceso
 # --------------------------------------------------
 with tab_run:
-
     st.subheader("Procesar todos los meses del proyecto")
     st.caption("Este proceso puede tardar varios minutos, preferiblemente usar solo cuando sea necesario")
+
     if st.button("🌎 Procesar TODAS las carpetas del proyecto"):
-        with st.spinner("Procesando todas las carpetas del proyecto..."):
-            resultados = correr_todos_los_meses(BASE_ROOT, proyecto, valores_referencia)
-
-        if resultados:
-            st.success(f"Proceso completado para {len(resultados)} carpetas de mes ✅")
+        if correr_todos_los_meses is None:
+            st.warning("En modo crítico no está habilitado 'Procesar todas las carpetas'.")
         else:
-            st.warning("No se encontraron carpetas de mes para este proyecto.")
+            with st.spinner("Procesando todas las carpetas del proyecto..."):
+                resultados = correr_todos_los_meses(BASE_ROOT, proyecto, valores_referencia)
 
-        # pequeño resumen en tabla
-        if resultados:
-            df_res = pd.DataFrame(
-                [
-                    {"carpeta_mes": r["carpeta_mes"], "anio": r["anio"], "mes": r["mes"]}
-                    for r in resultados
-                    if r is not None
-                ]
-            )
-            st.dataframe(df_res)
+            if resultados:
+                st.success(f"Proceso completado para {len(resultados)} carpetas de mes ✅")
+            else:
+                st.warning("No se encontraron carpetas de mes para este proyecto.")
+
+            if resultados:
+                df_res = pd.DataFrame(
+                    [
+                        {"carpeta_mes": r["carpeta_mes"], "anio": r["anio"], "mes": r["mes"]}
+                        for r in resultados
+                        if r is not None
+                    ]
+                )
+                st.dataframe(df_res)
 
     st.subheader("Ejecución")
-    # --- procesar SOLO el mes seleccionado (lo que ya tenías) ---
     if procesar_btn:
         with st.spinner("Procesando actas, por favor espera..."):
-            info = correr_todo(BASE_ROOT, proyecto, nombre_carpeta_mes, valores_referencia, modo_critico = modo_critico) #Aqui borre la utima variable modo_critico = modo_critico
+            info = correr_todo(
+                BASE_ROOT,
+                proyecto,
+                nombre_carpeta_mes,
+                valores_referencia,
+                modo_critico=modo_critico
+            )
 
         st.success("Proceso completado ✅")
 
@@ -385,14 +460,11 @@ with tab_run:
 # TAB 2: visualizar resúmenes y base de datos
 # --------------------------------------------------
 with tab_resumen:
-  
     st.subheader("Resúmenes y registros")
 
     col_a, col_b = st.columns(2)
 
-    # ==================================================
     # Base general (toda la historia)
-    # ==================================================
     base_general_path = os.path.join(
         BASE_ROOT, proyecto, "control_actas", "datos", "base_general.xlsx"
     )
@@ -445,8 +517,6 @@ with tab_resumen:
                     f"No se encontró columna de contratista. Columnas disponibles: {list(df_base.columns)}"
                 )
 
-
-
     # Resumen mensual
     carpeta_resumen_mes = os.path.join(
         BASE_ROOT, proyecto, "control_actas", "resumen", nombre_carpeta_mes
@@ -455,7 +525,7 @@ with tab_resumen:
 
     if os.path.exists(resumen_mes_path):
         with col_b:
-            st.markdown(f"#### Resumen mensual ({mes.capitalize()} {anio})")
+            st.markdown(f"#### Resumen mensual ({mes.capitalize()} {anio_proyecto})")
             try:
                 df_resumen = pd.read_excel(resumen_mes_path, sheet_name="RESUMEN")
                 st.dataframe(
@@ -466,8 +536,7 @@ with tab_resumen:
                 st.error(f"No se pudo leer el resumen mensual: {e}")
     else:
         col_b.info("Aún no hay resumen mensual generado para este periodo.")
-        
-        
+
     st.markdown("#### Totales por contratista (Cantidades)")
     try:
         df_cat = pd.read_excel(resumen_mes_path, sheet_name="CANTIDADES")
@@ -478,8 +547,9 @@ with tab_resumen:
     except Exception:
         st.info("No existe aún la hoja 'CANTIDADES'. Ejecuta el proceso.")
 
+
 # --------------------------------------------------
-# TAB 3: infomes de looker studio
+# TAB 3: informes de looker studio
 # --------------------------------------------------
 with tab_informes:
     st.subheader(f"Dashboard del proyecto: {proyecto}")
@@ -490,87 +560,80 @@ with tab_informes:
         st.link_button("Abrir Dashboard en Looker Studio", url_dashboard)
     else:
         st.warning("No hay un dashboard configurado para este proyecto.")
+
+
 # --------------------------------------------------
 # TAB 4: bases de precios
 # --------------------------------------------------
 with tab_based:
-  st.subheader("📂 Base de datos en uso")
+    st.subheader("📂 Base de datos en uso")
 
-  ruta_bd = st.session_state.get("db_precios_path")
+    ruta_bd = st.session_state.get("db_precios_path")
 
-  if not ruta_bd:
-      st.caption("Base de datos definida en de forma manual")
-  else:
-      carpeta = os.path.basename(os.path.dirname(ruta_bd))
-      archivo = os.path.basename(ruta_bd)
+    if not ruta_bd:
+        st.caption("Base de datos definida en de forma manual")
+    else:
+        carpeta = os.path.basename(os.path.dirname(ruta_bd))
+        archivo = os.path.basename(ruta_bd)
 
-      st.markdown(
-          f"""
-          **Archivo activo:**  
-          `{carpeta}/{archivo}`
-          """
-      )
+        st.markdown(
+            f"""
+            **Archivo activo:**  
+            `{carpeta}/{archivo}`
+            """
+        )
 
-      st.caption("Esta es la base que el sistema está usando en este momento.")
-  # ==============================
-  # 👀 VISUALIZACIÓN DE BASES EN USO
-  # ==============================
+        st.caption("Esta es la base que el sistema está usando en este momento.")
 
+    if modo_backend == "normal":
+        st.caption("Esto muestra EXACTAMENTE lo que estás usando en modo NORMAL: `valores_referencia`.")
 
-  #tab_bn, tab_bc = st.tabs(["🟢 Normal (BD)", "🔥 Crítico (diccionario)"])
+        if not valores_referencia:
+            st.warning("`valores_referencia` está vacío. (O estás en modo crítico, o falló la carga).")
+        else:
+            if isinstance(valores_referencia, dict):
+                df_bn = pd.DataFrame(
+                    [{"actividad": k, "precio": v} for k, v in valores_referencia.items()]
+                )
+                st.dataframe(
+                    formatear_numeros_df(df_bn),
+                    use_container_width=True,
+                    hide_index=True
+                )
+                st.caption(f"Registros: {len(df_bn)}")
+            else:
+                st.info("`valores_referencia` no es dict. Muestro tal cual:")
+                st.write(valores_referencia)
 
-  if modo_backend == "normal":
-      st.caption("Esto muestra EXACTAMENTE lo que estás usando en modo NORMAL: `valores_referencia`.")
+    if modo_backend == "critico":
+        st.caption("Esto muestra EXACTAMENTE lo que estás usando en modo CRÍTICO: `ACTIVIDADES_CRITICAS` (si está definida).")
 
-      if not valores_referencia:
-          st.warning("`valores_referencia` está vacío. (O estás en modo crítico, o falló la carga).")
-      else:
-          # Si es dict: actividad -> precio
-          if isinstance(valores_referencia, dict):
-              df_bn = pd.DataFrame(
-                  [{"actividad": k, "precio": v} for k, v in valores_referencia.items()]
-              )
-              st.dataframe(
-                formatear_numeros_df(df_bn),
-                use_container_width=True,
-                hide_index=True
-            )
-              st.caption(f"Registros: {len(df_bn)}")
-          else:
-              st.info("`valores_referencia` no es dict. Muestro tal cual:")
-              st.write(valores_referencia)
+        try:
+            from control_actas.config import ACTIVIDADES_CRITICAS
+        except Exception as e:
+            ACTIVIDADES_CRITICAS = None
+            st.error(f"No pude importar ACTIVIDADES_CRITICAS: {e}")
 
-  if modo_backend == "critico":
-      st.caption("Esto muestra EXACTAMENTE lo que estás usando en modo CRÍTICO: `ACTIVIDADES_CRITICAS` (si está definida).")
+        if not ACTIVIDADES_CRITICAS:
+            st.warning("`ACTIVIDADES_CRITICAS` está vacío o no existe.")
+        else:
+            if isinstance(ACTIVIDADES_CRITICAS, dict):
+                sample_val = next(iter(ACTIVIDADES_CRITICAS.values()))
+                if isinstance(sample_val, (int, float)):
+                    df_bc = pd.DataFrame(
+                        [{"actividad": k, "precio": v} for k, v in ACTIVIDADES_CRITICAS.items()]
+                    )
+                else:
+                    df_bc = pd.DataFrame(
+                        [{"actividad": k, **(v if isinstance(v, dict) else {"valor": v})}
+                         for k, v in ACTIVIDADES_CRITICAS.items()]
+                    )
 
-      try:
-          from control_actas.config import ACTIVIDADES_CRITICAS
-      except Exception as e:
-          ACTIVIDADES_CRITICAS = None
-          st.error(f"No pude importar ACTIVIDADES_CRITICAS: {e}")
+                st.dataframe(df_bc, use_container_width=True, hide_index=True)
+                st.caption(f"Registros: {len(df_bc)}")
+            else:
+                st.info("`ACTIVIDADES_CRITICAS` no es dict. Muestro tal cual:")
+                st.write(ACTIVIDADES_CRITICAS)
 
-      if not ACTIVIDADES_CRITICAS:
-          st.warning("`ACTIVIDADES_CRITICAS` está vacío o no existe.")
-      else:
-          # puede ser dict actividad->precio o algo más complejo
-          if isinstance(ACTIVIDADES_CRITICAS, dict):
-              # Si el valor es número, lo tratamos como precio
-              sample_val = next(iter(ACTIVIDADES_CRITICAS.values()))
-              if isinstance(sample_val, (int, float)):
-                  df_bc = pd.DataFrame(
-                      [{"actividad": k, "precio": v} for k, v in ACTIVIDADES_CRITICAS.items()]
-                  )
-              else:
-                  # Si el valor es dict/obj, lo expandimos a columnas
-                  df_bc = pd.DataFrame(
-                      [{"actividad": k, **(v if isinstance(v, dict) else {"valor": v})}
-                      for k, v in ACTIVIDADES_CRITICAS.items()]
-                  )
-
-              st.dataframe(df_bc, use_container_width=True, hide_index=True)
-              st.caption(f"Registros: {len(df_bc)}")
-          else:
-              st.info("`ACTIVIDADES_CRITICAS` no es dict. Muestro tal cual:")
-              st.write(ACTIVIDADES_CRITICAS)
 
         
