@@ -4,6 +4,13 @@ import pandas as pd
 from pathlib import Path
 
 from control_actas_local import get_backend
+# DESDE AQUI
+import streamlit as st
+
+st.write("Secrets keys:", list(st.secrets.keys()))
+st.write("Tipo JSON secret:", type(st.secrets.get("GDRIVE_SERVICE_ACCOUNT_JSON")))
+st.write("Longitud JSON secret:", len(str(st.secrets.get("GDRIVE_SERVICE_ACCOUNT_JSON", ""))))
+
 
 from drive_utils import get_drive_service, list_folders
 
@@ -16,6 +23,7 @@ folders = list_folders(service, root_id)
 st.write("Carpetas encontradas en control_actas:")
 for f in folders:
     st.write(f"📁 {f['name']}")
+#HASTA AQUI
 
 def formatear_numeros_df(df: pd.DataFrame) -> pd.DataFrame:
     """
@@ -661,6 +669,7 @@ with tab_based:
             else:
                 st.info("`ACTIVIDADES_CRITICAS` no es dict. Muestro tal cual:")
                 st.write(ACTIVIDADES_CRITICAS)
+
 
 
 
