@@ -319,7 +319,7 @@ modo_critico = st.sidebar.toggle("🔥 Modo crítico (solo actividades sensibles
 modo_backend = "critico" if modo_critico else "normal"
 backend = get_backend(modo_backend, anio_proyecto=anio_proyecto)
 
-BASE_ROOT = str(get_proyectos_root() 
+BASE_ROOT = str(get_proyectos_root()) 
 correr_todo = backend["correr_todo"]
 correr_todos_los_meses = backend.get("correr_todos_los_meses")  # puede ser None en crítico
 listar_carpetas_mes = backend["listar_carpetas_mes"]
@@ -637,4 +637,5 @@ with tab_based:
 
 
         
+
 
