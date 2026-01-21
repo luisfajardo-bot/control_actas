@@ -5,6 +5,17 @@ from pathlib import Path
 
 from control_actas_local import get_backend
 
+from drive_utils import get_drive_service, list_folders
+
+st.subheader("🔌 Test Drive (Cloud)")
+
+service = get_drive_service()
+root_id = st.secrets["DRIVE_ROOT_FOLDER_ID"]
+folders = list_folders(service, root_id)
+
+st.write("Carpetas encontradas en control_actas:")
+for f in folders:
+    st.write(f"📁 {f['name']}")
 
 def formatear_numeros_df(df: pd.DataFrame) -> pd.DataFrame:
     """
@@ -652,7 +663,7 @@ with tab_based:
                 st.write(ACTIVIDADES_CRITICAS)
 
 
-        
+
 
 
 
