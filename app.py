@@ -315,45 +315,50 @@ MESES = [
 st.sidebar.title("Filtros")
 st.sidebar.markdown("---")
 
-modo_critico = st.sidebar.toggle("🔥 Modo crítico (solo actividades sensibles)", value=False)
+# 1) Modo crítico primero (no depende de nada)
+modo_critico = st.sidebar.toggle(
+    "🔥 Modo crítico (solo actividades sensibles)",
+    value=False
+)
 modo_backend = "critico" if modo_critico else "normal"
-backend = get_backend(modo_backend, anio_proyecto=anio_proyecto)
 
-BASE_ROOT = str(get_proyectos_root()) 
-correr_todo = backend["correr_todo"]
-correr_todos_los_meses = backend.get("correr_todos_los_meses")  # puede ser None en crítico
-listar_carpetas_mes = backend["listar_carpetas_mes"]
-
+# 2) Proyecto / Año / Mes (estos crean anio_proyecto)
 proyecto = st.sidebar.selectbox("Proyecto", PROYECTOS)
-
-# --- Nuevo: Año del PROYECTO (actas/salidas/histórico) ---
-proyectos_root = get_proyectos_root()
-anios_proyecto = detectar_carpetas_anio(proyectos_root, fallback=list(range(2025, 2035)))
 
 anio_proyecto = st.sidebar.selectbox(
     "Año (Proyecto / Actas / Salidas)",
-    anios_proyecto,
-    index=anios_proyecto.index(st.session_state.get("anio_proyecto", DEFAULT_ANIO_PROY))
-    if st.session_state.get("anio_proyecto", DEFAULT_ANIO_PROY) in anios_proyecto else 0
+    list(range(2025, 2035)),
+    index=list(range(2025, 2035)).index(st.session_state.get("anio_proyecto", 2026))
+    if st.session_state.get("anio_proyecto", 2026) in list(range(2025, 2035)) else 0
 )
 st.session_state["anio_proyecto"] = anio_proyecto
 
 mes = st.sidebar.selectbox("Mes", MESES)
 
-# --- Nuevo: Base de precios (independiente) ---
-precios_root = get_precios_root()
-versiones_precios = detectar_versiones_precios(precios_root, fallback=["2024", "2025", "2026"])
-
-default_version = st.session_state.get("precios_version", DEFAULT_PRECIOS_VERSION)
-precios_version = st.sidebar.selectbox(
-    "Base de precios (versión/año)",
-    versiones_precios,
-    index=versiones_precios.index(default_version) if default_version in versiones_precios else 0
-)
-st.session_state["precios_version"] = precios_version
-
-# Nombre carpeta mes sigue usando el AÑO DEL PROYECTO
 nombre_carpeta_mes = f"{mes}{anio_proyecto}"
+
+# 3) YA con anio_proyecto definido, ahora sí importamos backend
+backend = get_backend(modo_backend, anio_proyecto=anio_proyecto)
+
+BASE_ROOT = backend["BASE_ROOT"]
+correr_todo = backend["correr_todo"]
+correr_todos_los_meses = backend.get("correr_todos_los_meses")  # puede ser None en crítico
+listar_carpetas_mes = backend["listar_carpetas_mes"]
+
+# 4) Base de precios (depende solo del selector, no del backend)
+st.sidebar.markdown("---")
+
+# Si estás en crítico, no tiene sentido base de precios (la puedes ocultar)
+if not modo_critico:
+    precios_version = st.sidebar.selectbox(
+        "Base de precios (versión/año)",
+        ["2024", "2025", "2026"],
+        index=["2024", "2025", "2026"].index(st.session_state.get("precios_version", "2025"))
+        if st.session_state.get("precios_version", "2025") in ["2024", "2025", "2026"] else 1
+    )
+    st.session_state["precios_version"] = precios_version
+else:
+    st.session_state["precios_version"] = st.session_state.get("precios_version", "2025")
 
 st.sidebar.markdown("---")
 procesar_btn = st.sidebar.button("🚀 Procesar actas")
@@ -637,5 +642,6 @@ with tab_based:
 
 
         
+
 
 
