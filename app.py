@@ -87,13 +87,13 @@ def vista_selector():
         oficina_key = os.environ.get("OFICINA_KEY")
 
         if st.button("Validar"):
-                if clave == oficina_key:
-                    st.session_state["oficina_ok"] = True
-                    st.success("Acceso concedido ✅")
-                else:
-                    st.error(temp)
-                    st.error("Clave incorrecta ❌")
-                    st.stop()
+            if clave == oficina_key:
+                st.session_state["oficina_ok"] = True
+                st.success("Acceso concedido ✅")
+            else:
+                st.error(temp)
+                st.error("Clave incorrecta ❌")
+                st.stop()
 
     # Si es oficina y no está ok, frenamos
     if st.session_state["vista"] == "OFICINA" and not st.session_state["oficina_ok"]:
@@ -708,6 +708,7 @@ with tab_based:
             else:
                 st.info("`ACTIVIDADES_CRITICAS` no es dict. Muestro tal cual:")
                 st.write(ACTIVIDADES_CRITICAS)
+
 
 
 
