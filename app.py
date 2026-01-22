@@ -8,11 +8,8 @@ import streamlit as st
 import pandas as pd
 
 from control_actas_local import get_backend
+from control_actas.bd_precios import cargar_valores_referencia
 
-# ==================================================
-# BD precios (lectura + edición solo OFICINA)
-# ==================================================
-from control_actas.bd_precios import leer_precios, upsert_precios
 
 
 # ==================================================
@@ -24,6 +21,7 @@ try:
         list_folders,
         find_child_folder,
         find_file,
+        upload_or_update_file
         download_file,
         upload_or_update_file,
     )
@@ -33,16 +31,19 @@ except Exception:
         list_folders,
         find_child_folder,
         find_file,
+        upload_or_update_file
         download_file,
         upload_or_update_file,
     )
 
 
 # ==================================================
+# Helpers
 # Helpers Drive
 # ==================================================
 def list_files_in_folder(service, folder_id: str):
     """
+    Lista archivos (no carpetas) dentro de un folder de Drive.
     Lista archivos dentro de un folder de Drive.
     Retorna items con keys: id, name, mimeType.
     """
@@ -66,6 +67,7 @@ def list_files_in_folder(service, folder_id: str):
             break
 
     return out
+    
 
 
 def get_or_create_folder(service, parent_id: str, name: str) -> str:
@@ -73,10 +75,12 @@ def get_or_create_folder(service, parent_id: str, name: str) -> str:
     if fid:
         return fid
     meta = {"name": name, "mimeType": "application/vnd.google-apps.folder", "parents": [parent_id]}
-    created = service.files().create(body=meta, fields="id", supportsAllDrives=True).execute()
+    created = service.files().create(body=meta, fields="id").execute()
     return created["id"]
 
 
+
+def sync_actas_mes_desde_drive(service, root_id: str, base_root: Path, proyecto: str, nombre_carpeta_mes: str, anio: int):
 def sync_actas_mes_desde_drive(
     service,
     root_id: str,
@@ -87,24 +91,38 @@ def sync_actas_mes_desde_drive(
 ):
     """
     Descarga a filesystem local (Cloud) los .xlsx del mes para que el backend los vea.
+    Versión robusta: prueba varias estructuras de Drive y, si falla, muestra diagnóstico.
 
     MUY IMPORTANTE:
     - El backend (pipeline_mes.py) arma carpeta_mes como:
       base_root / proyecto / control_actas / actas / nombre_carpeta_mes
     - Por eso descargamos EXACTO ahí (SIN meter /anio/ en local).
     """
+    # Estructura objetivo local (la que tu backend ya espera)
     # Estructura objetivo local (la que tu backend espera)
     local_mes = base_root / proyecto / "control_actas" / "actas" / nombre_carpeta_mes
     local_mes.mkdir(parents=True, exist_ok=True)
 
+    # -------- helpers internos --------
     def _ls_names(folder_id: str) -> list[str]:
+        # list_folders ya la tienes importada; aquí la uso para listar carpetas hijas
         try:
             childs = list_folders(service, folder_id)
         except TypeError:
+            # por si tu list_folders requiere otro argumento
             childs = list_folders(service, folder_id, mime_type="application/vnd.google-apps.folder")
         return [c.get("name", "") for c in (childs or [])]
 
+    def _must(folder_id: str | None, msg: str):
+        if not folder_id:
+            raise FileNotFoundError(msg)
+        return folder_id
+
     def _find_path(path_names: list[str]) -> str | None:
+        """
+        Navega por nombres de carpeta secuenciales.
+        Devuelve el folder_id final o None si algún segmento no existe.
+        """
         cur = root_id
         for name in path_names:
             nxt = find_child_folder(service, cur, name)
@@ -113,17 +131,28 @@ def sync_actas_mes_desde_drive(
             cur = nxt
         return cur
 
+    # -------- candidatos de estructura (prueba en orden) --------
+    # NOTA: root_id es tu DRIVE_ROOT_FOLDER_ID. No sabemos a qué apunta exactamente.
+    # Probamos varios "árboles" típicos.
     # Tu ROOT YA contiene: Grupo 3, Grupo 4, precios_referencia, etc.
     candidates = [
+        # 1) ROOT / Grupo 3 / control_actas / actas / octubre2025
         # ROOT / Grupo 3 / control_actas / actas / octubre2025
         [proyecto, "control_actas", "actas", nombre_carpeta_mes],
+    
+        # 2) por si tuvieras el año como carpeta intermedia:
+        # ROOT / Grupo 3 / control_actas / actas / 2025 / octubre2025
+
         # Variantes por si alguien guardó el año en medio (por si acaso)
         [proyecto, "control_actas", "actas", str(anio), nombre_carpeta_mes],
+    
+        # 3) variante (menos común): ROOT / Grupo 3 / 2025 / control_actas / actas / octubre2025
         [proyecto, str(anio), "control_actas", "actas", nombre_carpeta_mes],
     ]
 
     mes_id = None
     last_fail = None
+
     for path_names in candidates:
         try_id = _find_path(path_names)
         if try_id:
@@ -132,14 +161,22 @@ def sync_actas_mes_desde_drive(
         last_fail = path_names
 
     if not mes_id:
+        # Diagnóstico útil: muestra qué carpetas hay en root y en Subcontratos si existe
         root_folders = _ls_names(root_id)
+        sub_id = find_child_folder(service, root_id, "Subcontratos")
+        sub_folders = _ls_names(sub_id) if sub_id else []
+
         raise FileNotFoundError(
             "No pude ubicar la carpeta del mes en Drive.\n\n"
             f"Ruta intentada (último intento): {' / '.join(last_fail or [])}\n\n"
+            f"Carpetas visibles en DRIVE_ROOT_FOLDER_ID:\n- " + "\n- ".join(root_folders[:50]) + "\n\n"
+            + (("Carpetas visibles en 'Subcontratos':\n- " + "\n- ".join(sub_folders[:50])) if sub_folders else "No existe carpeta 'Subcontratos' dentro del root.")
             "Carpetas visibles en DRIVE_ROOT_FOLDER_ID:\n- "
             + "\n- ".join(root_folders[:80])
         )
 
+    # -------- listar archivos y descargar xlsx --------
+    # usamos la API directa (porque list_folders suele listar solo carpetas)
     # Listar archivos del mes y descargar xlsx
     items = list_files_in_folder(service, mes_id)
 
@@ -227,6 +264,9 @@ def _reset_local_inputs():
 
 
 def vista_selector():
+    """
+    Pantalla inicial + control simple de acceso para OFICINA.
+    """
     """Pantalla inicial + control simple de acceso para OFICINA."""
     _init_state()
 
@@ -278,6 +318,9 @@ def vista_selector():
 
 
 def render_subcontratos_uploader():
+    """
+    UI de carga local para la vista SUBCONTRATOS.
+    """
     """UI de carga local para la vista SUBCONTRATOS."""
     st.markdown("## 🧰 Subcontratos: carga local")
     st.caption("Sube un .zip con actas o un .xlsx individual. Se guardan temporalmente para procesar local.")
@@ -285,6 +328,11 @@ def render_subcontratos_uploader():
     col1, col2 = st.columns([2, 1])
 
     with col1:
+        up = st.file_uploader(
+            "Subir archivo",
+            type=["zip", "xlsx"],
+            accept_multiple_files=False
+        )
         up = st.file_uploader("Subir archivo", type=["zip", "xlsx"], accept_multiple_files=False)
 
     with col2:
@@ -330,14 +378,59 @@ def render_subcontratos_uploader():
         st.success("XLSX cargado ✅")
         st.caption(f"Archivo guardado en: `{xlsx_path}`")
 
+def exportar_resultados_a_drive(service, root_id: str, proyecto: str, nombre_carpeta_mes: str, info: dict):
+    """
+    Sube outputs a Drive con esta estructura (desde tu ROOT actual):
+    ROOT / {proyecto} / control_actas / salidas / {mes}
+    ROOT / {proyecto} / control_actas / resumen / {mes}
+    ROOT / {proyecto} / control_actas / datos / base_general.xlsx
+    ROOT / {proyecto} / control_actas / resumen / resumen_global.xlsx
+    """
+    proyecto_id = get_or_create_folder(service, root_id, proyecto)
+    ca_id = get_or_create_folder(service, proyecto_id, "control_actas")
+
+    salidas_id = get_or_create_folder(service, ca_id, "salidas")
+    resumen_id = get_or_create_folder(service, ca_id, "resumen")
+    datos_id   = get_or_create_folder(service, ca_id, "datos")
+
+    salidas_mes_id = get_or_create_folder(service, salidas_id, nombre_carpeta_mes)
+    resumen_mes_id = get_or_create_folder(service, resumen_id, nombre_carpeta_mes)
+
+    mime_xlsx = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+    # Salidas del mes
+    for p in Path(info["carpeta_salida_mes"]).glob("*.xlsx"):
+        upload_or_update_file(service, salidas_mes_id, p, mime_xlsx)
+
+    # Resumen del mes
+    for p in Path(info["carpeta_resumen_mes"]).glob("*.xlsx"):
+        upload_or_update_file(service, resumen_mes_id, p, mime_xlsx)
+
+    # Base general
+    base_general = Path(info["carpeta_datos"]) / "base_general.xlsx"
+    if base_general.exists():
+        upload_or_update_file(service, datos_id, base_general, mime_xlsx)
+
+    # Resumen global
+    resumen_global = Path(info["carpeta_resumen"]) / "resumen_global.xlsx"
+    if resumen_global.exists():
+        upload_or_update_file(service, resumen_id, resumen_global, mime_xlsx)
 
 # ==================================================
 # Entorno
 # ==================================================
 def detectar_cloud() -> bool:
     try:
+        if "DRIVE_ROOT_FOLDER_ID" in st.secrets:
+            return True
         return "DRIVE_ROOT_FOLDER_ID" in st.secrets
     except Exception:
+        pass
+
+    return any(k in os.environ for k in [
+        "STREAMLIT_RUNTIME",
+        "STREAMLIT_SERVER_HEADLESS",
+    ])
         return False
 
 
@@ -430,6 +523,47 @@ small, .stCaption, [data-testid="stCaptionContainer"] {{
 }}
 hr {{
   border-color: var(--border) !important;
+}}
+/* selectbox */
+section[data-testid="stSidebar"] div[data-baseweb="select"] > div {{
+  background-color: var(--card) !important;
+  border: 1px solid var(--border) !important;
+}}
+section[data-testid="stSidebar"] div[data-baseweb="select"] span,
+section[data-testid="stSidebar"] div[data-baseweb="select"] div,
+section[data-testid="stSidebar"] div[data-baseweb="select"] p {{
+  color: var(--text) !important;
+}}
+section[data-testid="stSidebar"] div[data-baseweb="select"] svg {{
+  fill: var(--text) !important;
+}}
+div[data-baseweb="popover"],
+div[data-baseweb="popover"] * {{
+  background-color: var(--card) !important;
+}}
+ul[role="listbox"] {{
+  background-color: var(--card) !important;
+  border: 1px solid var(--border) !important;
+  padding: 6px !important;
+}}
+ul[role="listbox"] li,
+ul[role="listbox"] div[role="option"] {{
+  background-color: var(--card) !important;
+  color: var(--text) !important;
+}}
+ul[role="listbox"] li:hover,
+ul[role="listbox"] div[role="option"]:hover {{
+  background-color: var(--primary) !important;
+  color: var(--button_text) !important;
+}}
+ul[role="listbox"] li[aria-selected="true"],
+ul[role="listbox"] div[role="option"][aria-selected="true"] {{
+  background-color: var(--primary) !important;
+  color: var(--button_text) !important;
+}}
+div[data-baseweb="select"] input {{
+  color: var(--text) !important;
+  caret-color: var(--text) !important;
 }}
 /* botones */
 .stButton > button {{
@@ -532,6 +666,7 @@ procesar_btn = st.sidebar.button("🚀 Procesar actas")
 # ==================================================
 backend = get_backend(modo_backend, anio_proyecto=anio_proyecto)
 BASE_ROOT = backend["BASE_ROOT"]
+
 correr_todo = backend["correr_todo"]
 correr_todos_los_meses = backend.get("correr_todos_los_meses")
 listar_carpetas_mes = backend["listar_carpetas_mes"]
@@ -552,24 +687,23 @@ st.markdown(
 
 if VISTA == "SUBCONTRATOS":
     render_subcontratos_uploader()
+    st.info(
+        "🧩 Nota: la carga ya queda lista en `st.session_state['local_inputs_dir']`."
+    )
     st.info("🧩 Nota: la carga ya queda lista en `st.session_state['local_inputs_dir']`.")
 
 
 # ==================================================
-# Carga BD precios (NORMAL)  (MISMA LÓGICA QUE TENÍAS)
+# Carga BD precios (NORMAL)
 # ==================================================
 valores_referencia = {}
 db_path = None
 st.session_state["db_precios_path"] = None
 
-# (solo para edición en cloud: guardamos IDs, NO afecta la lógica de carga)
-# No los borramos para no romper la subida al guardar.
-if "precios_version_folder_id" not in st.session_state:
-    st.session_state["precios_version_folder_id"] = None
-if "precios_db_file_id" not in st.session_state:
-    st.session_state["precios_db_file_id"] = None
-
 if not modo_critico:
+    from control_actas.bd_precios import cargar_valores_referencia
+    # Importa desde el backend ACTIVO (normal/crítico) usando import relativo ya resuelto por get_backend.
+    # En cloud, 'control_actas' puede NO ser un paquete global, por eso importamos del backend devuelto:
     try:
         cargar_valores_referencia = backend["cargar_valores_referencia"]
     except Exception:
@@ -592,10 +726,6 @@ if not modo_critico:
             if not file_id:
                 raise FileNotFoundError("No se encontró 'precios_referencia.db' en esa versión.")
 
-            # ✅ Guardar IDs (para edición/subida)
-            st.session_state["precios_version_folder_id"] = version_folder_id
-            st.session_state["precios_db_file_id"] = file_id
-
             tmp_dir = Path(tempfile.gettempdir())
             db_path = tmp_dir / f"precios_referencia_{precios_version}.db"
             download_file(service, file_id, db_path)
@@ -616,6 +746,10 @@ if not modo_critico:
         st.session_state["db_precios_path"] = str(db_path)
 
     except FileNotFoundError as e:
+        st.warning(
+            "⚠️ No se encontró la base de precios en el entorno actual. "
+            "Se continúa sin precios de referencia."
+        )
         st.warning("⚠️ No se encontró la base de precios en el entorno actual. Se continúa sin precios de referencia.")
         st.caption(str(e))
         valores_referencia = {}
@@ -640,6 +774,42 @@ tab_run, tab_resumen, tab_informes, tab_based = st.tabs(
 # TAB 1: ejecutar proceso
 # ==================================================
 with tab_run:
+    st.subheader("Procesar todos los meses del proyecto")
+    st.caption("Este proceso puede tardar varios minutos, preferiblemente usar solo cuando sea necesario")
+
+    if st.button("🌎 Procesar TODAS las carpetas del proyecto"):
+        if correr_todos_los_meses is None:
+            st.warning("En modo crítico no está habilitado 'Procesar todas las carpetas'.")
+        else:
+            # En CLOUD (y Oficina), sincronizamos al menos el mes seleccionado.
+            if IS_CLOUD and VISTA == "OFICINA":
+                try:
+                    service = get_drive_service()
+                    root_id = st.secrets["DRIVE_ROOT_FOLDER_ID"]
+                    local_mes, n = sync_actas_mes_desde_drive(
+                        service, root_id, Path(BASE_ROOT), proyecto, nombre_carpeta_mes, anio_proyecto
+                    )
+                    st.caption(f"☁️ Actas sincronizadas para {nombre_carpeta_mes}: {n} archivos en `{local_mes}`")
+                except Exception as e:
+                    st.error("No se pudieron sincronizar actas desde Drive.")
+                    st.exception(e)
+                    st.stop()
+
+            with st.spinner("Procesando todas las carpetas del proyecto..."):
+                resultados = correr_todos_los_meses(BASE_ROOT, proyecto, valores_referencia)
+
+            if resultados:
+                st.success(f"Proceso completado para {len(resultados)} carpetas de mes ✅")
+            else:
+                st.warning("No se encontraron carpetas de mes para este proyecto.")
+
+            if resultados:
+                df_res = pd.DataFrame(
+                    [{"carpeta_mes": r["carpeta_mes"], "anio": r["anio"], "mes": r["mes"]}
+                     for r in resultados if r is not None]
+                )
+                st.dataframe(df_res)
+
     st.subheader("Ejecución")
 
     if procesar_btn:
@@ -671,6 +841,18 @@ with tab_run:
                 valores_referencia,
                 modo_critico=modo_critico,
             )
+            if IS_CLOUD and VISTA == "OFICINA":
+                try:
+                    service = get_drive_service()
+                    root_id = st.secrets["DRIVE_ROOT_FOLDER_ID"]
+            
+                    with st.spinner("☁️ Subiendo resultados a Drive..."):
+                        exportar_resultados_a_drive(service, root_id, proyecto, nombre_carpeta_mes, info)
+            
+                    st.success("✅ Resultados subidos/actualizados en Drive.")
+                except Exception as e:
+                    st.error("❌ Falló la subida a Drive.")
+                    st.exception(e)
 
         # Export a Drive (solo Cloud + Oficina)
         if IS_CLOUD and VISTA == "OFICINA":
@@ -815,109 +997,4 @@ with tab_based:
                 st.caption(f"Registros: {len(df_bn)}")
             else:
                 st.info("`valores_referencia` no es dict. Muestro tal cual:")
-                st.write(valores_referencia)
-
-    # ==================================================
-    # ✅ EDICIÓN BD (SOLO OFICINA) - ÚNICO CAMBIO FUNCIONAL NUEVO
-    # ==================================================
-    if (
-        VISTA == "OFICINA"
-        and st.session_state.get("oficina_ok") is True
-        and (not modo_critico)
-        and st.session_state.get("db_precios_path")
-    ):
-        st.markdown("---")
-        st.subheader("✏️ Edición de base de precios (SOLO OFICINA)")
-
-        # Cargar DB a dataframe editable
-        try:
-            df_precios_db = leer_precios(Path(st.session_state["db_precios_path"]))
-        except Exception as e:
-            st.error("No se pudo leer la BD para edición.")
-            st.exception(e)
-            df_precios_db = pd.DataFrame(columns=["actividad", "precio", "unidad", "updated_at"])
-
-        if df_precios_db is None or df_precios_db.empty:
-            df_precios_db = pd.DataFrame(columns=["actividad", "precio", "unidad", "updated_at"])
-
-        st.caption("Puedes **editar precios** y **agregar filas**. `updated_at` se actualiza al guardar.")
-
-        df_editado = st.data_editor(
-            df_precios_db,
-            num_rows="dynamic",
-            use_container_width=True,
-            disabled=["updated_at"],
-            column_config={
-                "actividad": st.column_config.TextColumn("Actividad", required=True),
-                "precio": st.column_config.NumberColumn("Precio", required=True, format="%.2f"),
-                "unidad": st.column_config.TextColumn("Unidad"),
-                "updated_at": st.column_config.TextColumn("Última actualización", disabled=True),
-            },
-            key="editor_precios_oficina",
-        )
-
-        col_g1, col_g2 = st.columns([1, 1])
-
-        with col_g1:
-            if st.button("💾 Guardar cambios en BD", use_container_width=True):
-                try:
-                    payload = df_editado[["actividad", "precio", "unidad"]].copy()
-                    upsert_precios(Path(st.session_state["db_precios_path"]), payload)
-
-                    # Si es Cloud, subimos de vuelta a Drive (sin duplicar por nombre)
-                    if IS_CLOUD:
-                        service = get_drive_service()
-                        file_id = st.session_state.get("precios_db_file_id")
-                        version_folder_id = st.session_state.get("precios_version_folder_id")
-
-                        if not file_id:
-                            raise RuntimeError("No tengo 'precios_db_file_id' en session_state (no puedo actualizar la BD en Drive).")
-
-                        # Preferido: update por fileId (evita duplicados / confusiones)
-                        try:
-                            from googleapiclient.http import MediaFileUpload
-
-                            local_db = Path(st.session_state["db_precios_path"])
-                            media = MediaFileUpload(str(local_db), mimetype="application/octet-stream", resumable=False)
-                            service.files().update(
-                                fileId=file_id,
-                                media_body=media,
-                                supportsAllDrives=True
-                            ).execute()
-
-                        except Exception:
-                            # Fallback: por nombre (si el entorno no tiene MediaFileUpload)
-                            if not version_folder_id:
-                                raise RuntimeError("No tengo 'precios_version_folder_id' para fallback de subida.")
-                            upload_or_update_file(
-                                service,
-                                version_folder_id,
-                                Path(st.session_state["db_precios_path"]),
-                                "application/octet-stream",
-                            )
-
-                    st.success("✅ BD actualizada correctamente.")
-                    st.rerun()
-
-                except Exception as e:
-                    st.error("❌ No se pudo guardar la BD.")
-                    st.exception(e)
-
-        with col_g2:
-            if st.button("↩️ Recargar (descartar cambios locales)", use_container_width=True):
-                st.rerun()
-
-    elif VISTA == "SUBCONTRATOS":
-        st.caption("Edición deshabilitada: en vista SUBCONTRATOS la BD es SOLO LECTURA.")
-    elif modo_critico:
-        st.caption("Edición deshabilitada: estás en MODO CRÍTICO.")
-caption("Edición deshabilitada: estás en MODO CRÍTICO.")
-
-
-
-
-
-
-
-
 
