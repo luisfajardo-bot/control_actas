@@ -63,48 +63,85 @@ def list_files_in_folder(service, folder_id: str):
     return out
 
 
-def sync_actas_mes_desde_drive(
-    service,
-    root_id: str,
-    base_root: Path,
-    proyecto: str,
-    nombre_carpeta_mes: str,
-    anio: int,
-):
+def sync_actas_mes_desde_drive(service, root_id: str, base_root: Path, proyecto: str, nombre_carpeta_mes: str, anio: int):
     """
     Descarga a filesystem local (Cloud) los .xlsx del mes para que el backend los vea.
-    Supone estructura Drive:
-      root_id / (Subcontratos opcional) / <anio> / <proyecto> / control_actas / actas / <mes>
+    Versión robusta: prueba varias estructuras de Drive y, si falla, muestra diagnóstico.
     """
     # Estructura objetivo local (la que tu backend ya espera)
     local_mes = base_root / str(anio) / proyecto / "control_actas" / "actas" / nombre_carpeta_mes
     local_mes.mkdir(parents=True, exist_ok=True)
 
-    # ---- Drive: navegar a la carpeta del mes ----
-    # Si tu DRIVE_ROOT_FOLDER_ID ya apunta a Subcontratos, este find devuelve None y usamos root_id
-    subcontratos_id = find_child_folder(service, root_id, "Subcontratos") or root_id
+    # -------- helpers internos --------
+    def _ls_names(folder_id: str) -> list[str]:
+        # list_folders ya la tienes importada; aquí la uso para listar carpetas hijas
+        try:
+            childs = list_folders(service, folder_id)
+        except TypeError:
+            # por si tu list_folders requiere otro argumento
+            childs = list_folders(service, folder_id, mime_type="application/vnd.google-apps.folder")
+        return [c.get("name", "") for c in (childs or [])]
 
-    anio_id = find_child_folder(service, subcontratos_id, str(anio))
-    if not anio_id:
-        raise FileNotFoundError(f"No existe año {anio} en Drive (dentro de root).")
+    def _must(folder_id: str | None, msg: str):
+        if not folder_id:
+            raise FileNotFoundError(msg)
+        return folder_id
 
-    proyecto_id = find_child_folder(service, anio_id, proyecto)
-    if not proyecto_id:
-        raise FileNotFoundError(f"No existe proyecto '{proyecto}' en Drive para {anio}.")
+    def _find_path(path_names: list[str]) -> str | None:
+        """
+        Navega por nombres de carpeta secuenciales.
+        Devuelve el folder_id final o None si algún segmento no existe.
+        """
+        cur = root_id
+        for name in path_names:
+            nxt = find_child_folder(service, cur, name)
+            if not nxt:
+                return None
+            cur = nxt
+        return cur
 
-    ca_id = find_child_folder(service, proyecto_id, "control_actas")
-    if not ca_id:
-        raise FileNotFoundError("No existe carpeta 'control_actas' dentro del proyecto en Drive.")
+    # -------- candidatos de estructura (prueba en orden) --------
+    # NOTA: root_id es tu DRIVE_ROOT_FOLDER_ID. No sabemos a qué apunta exactamente.
+    # Probamos varios "árboles" típicos.
+    candidates = [
+        # A) root / 2025 / Grupo 3 / control_actas / actas / octubre2025
+        [str(anio), proyecto, "control_actas", "actas", nombre_carpeta_mes],
 
-    actas_id = find_child_folder(service, ca_id, "actas")
-    if not actas_id:
-        raise FileNotFoundError("No existe carpeta 'actas' dentro de 'control_actas' en Drive.")
+        # B) root / Subcontratos / 2025 / Grupo 3 / control_actas / actas / octubre2025
+        ["Subcontratos", str(anio), proyecto, "control_actas", "actas", nombre_carpeta_mes],
 
-    mes_id = find_child_folder(service, actas_id, nombre_carpeta_mes)
+        # C) root / Grupo 3 / 2025 / control_actas / actas / octubre2025  (año debajo del proyecto)
+        [proyecto, str(anio), "control_actas", "actas", nombre_carpeta_mes],
+
+        # D) root / Subcontratos / Grupo 3 / 2025 / control_actas / actas / octubre2025
+        ["Subcontratos", proyecto, str(anio), "control_actas", "actas", nombre_carpeta_mes],
+    ]
+
+    mes_id = None
+    last_fail = None
+
+    for path_names in candidates:
+        try_id = _find_path(path_names)
+        if try_id:
+            mes_id = try_id
+            break
+        last_fail = path_names
+
     if not mes_id:
-        raise FileNotFoundError(f"No existe carpeta de mes '{nombre_carpeta_mes}' en Drive.")
+        # Diagnóstico útil: muestra qué carpetas hay en root y en Subcontratos si existe
+        root_folders = _ls_names(root_id)
+        sub_id = find_child_folder(service, root_id, "Subcontratos")
+        sub_folders = _ls_names(sub_id) if sub_id else []
 
-    # Listar archivos y descargar xlsx
+        raise FileNotFoundError(
+            "No pude ubicar la carpeta del mes en Drive.\n\n"
+            f"Ruta intentada (último intento): {' / '.join(last_fail or [])}\n\n"
+            f"Carpetas visibles en DRIVE_ROOT_FOLDER_ID:\n- " + "\n- ".join(root_folders[:50]) + "\n\n"
+            + (("Carpetas visibles en 'Subcontratos':\n- " + "\n- ".join(sub_folders[:50])) if sub_folders else "No existe carpeta 'Subcontratos' dentro del root.")
+        )
+
+    # -------- listar archivos y descargar xlsx --------
+    # usamos la API directa (porque list_folders suele listar solo carpetas)
     items = list_files_in_folder(service, mes_id)
 
     descargados = 0
@@ -115,6 +152,7 @@ def sync_actas_mes_desde_drive(
             descargados += 1
 
     return local_mes, descargados
+
 
 
 def formatear_numeros_df(df: pd.DataFrame) -> pd.DataFrame:
@@ -798,6 +836,7 @@ with tab_based:
             else:
                 st.info("`valores_referencia` no es dict. Muestro tal cual:")
                 st.write(valores_referencia)
+
 
 
 
