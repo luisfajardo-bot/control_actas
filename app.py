@@ -91,7 +91,7 @@ def vista_selector():
                 st.session_state["oficina_ok"] = True
                 st.success("Acceso concedido ✅")
             else:
-                print(oficina_key)
+                st.error(oficina_key)
                 st.error("Clave incorrecta ❌")
                 st.stop()
 
@@ -708,5 +708,6 @@ with tab_based:
             else:
                 st.info("`ACTIVIDADES_CRITICAS` no es dict. Muestro tal cual:")
                 st.write(ACTIVIDADES_CRITICAS)
+
 
 
