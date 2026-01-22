@@ -55,22 +55,19 @@ def get_projects_root() -> Path:
     return DEFAULT_PROYECTOS_ROOT_LOCAL
 
 
-def resolver_base_root(anio_proyecto: Optional[int | str] = None) -> str:
-    """
-    Construye BASE_ROOT final PARA FILESYSTEM.
+def resolver_base_root(*, anio_proyecto=None) -> Path:
+    # Cloud: todo vive en /tmp
+    try:
+        import streamlit as st
+        is_cloud = "DRIVE_ROOT_FOLDER_ID" in st.secrets
+    except Exception:
+        is_cloud = False
 
-    - En LOCAL: <ROOT>/<AÑO> (si anio_proyecto viene) o <ROOT>
-    - En CLOUD: devuelve una ruta staging en /tmp (NO Drive)
-      La app debe descargar actas/Bd desde Drive a este staging si lo necesita.
-    """
-    root = get_projects_root()
-    root.mkdir(parents=True, exist_ok=True)  # asegura staging en cloud
+    if is_cloud:
+        return Path(tempfile.gettempdir()) / "control_actas_data"
 
-    if anio_proyecto is None or str(anio_proyecto).strip() == "":
-        return str(root)
-
-    anio_str = str(anio_proyecto).strip()
-    return str(root / anio_str)
+    # Local Windows (tu caso real)
+    return Path(r"G:\Mi unidad\Subcontratos")
 
 
 # =========================================================
@@ -132,6 +129,7 @@ def get_backend(modo: str, *, anio_proyecto: Optional[int | str] = None) -> Dict
         "PROJECTS_ROOT": str(get_projects_root()),
         "IS_CLOUD": is_cloud(),
     }
+
 
 
 
