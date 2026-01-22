@@ -83,16 +83,7 @@ def vista_selector():
     
         oficina_key = st.secrets["OFICINA_KEY"] if "OFICINA_KEY" in st.secrets else None
 
-        "DEBUG DE CLAVE"
-    st.subheader("🔎 Llaves disponibles en st.secrets")
-
-    if st.secrets:
-        for key in st.secrets.keys():
-            st.write(f"• {key}")
-    else:
-        st.write("❌ No hay secrets cargados")
-
-    
+   
         if st.button("Validar"):
             if oficina_key is None:
                 st.error("No se encontró OFICINA_KEY en Secrets de Streamlit Cloud.")
@@ -718,6 +709,7 @@ with tab_based:
             else:
                 st.info("`ACTIVIDADES_CRITICAS` no es dict. Muestro tal cual:")
                 st.write(ACTIVIDADES_CRITICAS)
+
 
 
 
