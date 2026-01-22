@@ -66,8 +66,7 @@ def upsert_precios(db_path: str | Path, df: pd.DataFrame) -> None:
     df2["updated_at"] = now
 
     rows = list(
-        df2[["actividad", "precio", "unidad", "updated_at"]]
-        .itertuples(index=False, name=None)
+        df2[["actividad", "precio", "unidad", "updated_at"]].itertuples(index=False, name=None)
     )
 
     con = connect(db_path)
@@ -86,5 +85,7 @@ def upsert_precios(db_path: str | Path, df: pd.DataFrame) -> None:
         con.commit()
     finally:
         con.close()
+
+
 
 
