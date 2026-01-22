@@ -1,5 +1,7 @@
 import os
 import tempfile
+import zipfile
+import shutil
 from pathlib import Path
 
 import streamlit as st
@@ -20,6 +22,145 @@ def formatear_numeros_df(df: pd.DataFrame) -> pd.DataFrame:
     return df_fmt
 
 
+def _init_state():
+    if "vista" not in st.session_state:
+        st.session_state["vista"] = None  # None | "OFICINA" | "SUBCONTRATOS"
+    if "oficina_ok" not in st.session_state:
+        st.session_state["oficina_ok"] = False
+    if "local_inputs_dir" not in st.session_state:
+        st.session_state["local_inputs_dir"] = None  # Path str
+    if "local_inputs_label" not in st.session_state:
+        st.session_state["local_inputs_label"] = None
+
+
+def _reset_local_inputs():
+    p = st.session_state.get("local_inputs_dir")
+    if p and os.path.exists(p):
+        try:
+            shutil.rmtree(p, ignore_errors=True)
+        except Exception:
+            pass
+    st.session_state["local_inputs_dir"] = None
+    st.session_state["local_inputs_label"] = None
+
+
+def vista_selector():
+    """
+    Pantalla inicial + control simple de acceso para OFICINA.
+    """
+    _init_state()
+
+    st.title("Control de Actas - ICEIN")
+    st.caption("Selecciona tu vista de trabajo 👇")
+
+    c1, c2 = st.columns(2)
+
+    with c1:
+        st.subheader("🏢 OFICINA")
+        st.write("- Usa Drive y funciona tal cual está hoy.")
+        st.write("- Permisos: editor (requiere clave).")
+        if st.button("Entrar a OFICINA"):
+            st.session_state["vista"] = "OFICINA"
+
+    with c2:
+        st.subheader("🧰 Ingenieros de Subcontratos")
+        st.write("- Procesa archivos subidos (.zip / .xlsx).")
+        st.write("- BD de precios: misma de Drive (solo lectura).")
+        if st.button("Entrar a Subcontratos"):
+            st.session_state["vista"] = "SUBCONTRATOS"
+            st.session_state["oficina_ok"] = False  # por si venían de oficina
+
+    # Si no han elegido vista, paramos aquí
+    if st.session_state["vista"] is None:
+        st.stop()
+
+    # Gate para OFICINA
+    if st.session_state["vista"] == "OFICINA" and not st.session_state["oficina_ok"]:
+        st.markdown("---")
+        st.subheader("🔐 Acceso OFICINA")
+        clave = st.text_input("Palabra clave", type="password")
+
+        oficina_key = None
+        try:
+            oficina_key = st.secrets.get("OFICINA_KEY", None)
+        except Exception:
+            oficina_key = os.environ.get("OFICINA_KEY")
+
+        if st.button("Validar"):
+            if oficina_key and clave == oficina_key:
+                st.session_state["oficina_ok"] = True
+                st.success("Acceso concedido ✅")
+            else:
+                st.error("Clave incorrecta ❌")
+                st.stop()
+
+    # Si es oficina y no está ok, frenamos
+    if st.session_state["vista"] == "OFICINA" and not st.session_state["oficina_ok"]:
+        st.stop()
+
+
+def render_subcontratos_uploader():
+    """
+    UI de carga local para la vista SUBCONTRATOS.
+    Aquí NO tocamos tu backend todavía, solo dejamos listo un folder temporal con los archivos.
+    """
+    st.markdown("## 🧰 Subcontratos: carga local")
+    st.caption("Sube un .zip con actas o un .xlsx individual. Se guardan temporalmente para procesar local.")
+
+    col1, col2 = st.columns([2, 1])
+
+    with col1:
+        up = st.file_uploader(
+            "Subir archivo",
+            type=["zip", "xlsx"],
+            accept_multiple_files=False
+        )
+
+    with col2:
+        if st.button("🧹 Limpiar carga"):
+            _reset_local_inputs()
+            st.info("Carga local limpiada.")
+
+    if up is None:
+        if st.session_state.get("local_inputs_dir"):
+            st.success(f"Carga activa: `{st.session_state['local_inputs_label']}`")
+            st.caption(f"Ruta temporal: `{st.session_state['local_inputs_dir']}`")
+        return
+
+    # Crear dir temporal limpio
+    _reset_local_inputs()
+    tmp_dir = Path(tempfile.mkdtemp(prefix="actas_local_"))
+
+    name = up.name.lower()
+    target_label = up.name
+
+    if name.endswith(".zip"):
+        zip_path = tmp_dir / up.name
+        zip_path.write_bytes(up.getbuffer())
+
+        extract_dir = tmp_dir / "extraido"
+        extract_dir.mkdir(parents=True, exist_ok=True)
+
+        with zipfile.ZipFile(zip_path, "r") as z:
+            z.extractall(extract_dir)
+
+        st.session_state["local_inputs_dir"] = str(extract_dir)
+        st.session_state["local_inputs_label"] = target_label
+        st.success("ZIP cargado y extraído ✅")
+        st.caption(f"Archivos extraídos en: `{extract_dir}`")
+
+    elif name.endswith(".xlsx"):
+        xlsx_dir = tmp_dir / "xlsx"
+        xlsx_dir.mkdir(parents=True, exist_ok=True)
+        xlsx_path = xlsx_dir / up.name
+        xlsx_path.write_bytes(up.getbuffer())
+
+        st.session_state["local_inputs_dir"] = str(xlsx_dir)
+        st.session_state["local_inputs_label"] = target_label
+        st.success("XLSX cargado ✅")
+        st.caption(f"Archivo guardado en: `{xlsx_path}`")
+
+
 # ==================================================
 # Entorno
 # ==================================================
@@ -30,7 +171,6 @@ IS_CLOUD = "STREAMLIT_RUNTIME" in os.environ or "STREAMLIT_SERVER_HEADLESS" in o
 # Drive utils (import robusto: raíz o utils/)
 # ==================================================
 try:
-    # si en el futuro mueves a utils/
     from utils.drive_utils import (
         get_drive_service,
         list_folders,
@@ -39,7 +179,6 @@ try:
         download_file,
     )
 except Exception:
-    # como lo tienes hoy en la raíz del repo
     from drive_utils import (
         get_drive_service,
         list_folders,
@@ -57,6 +196,13 @@ st.set_page_config(
     page_icon="📑",
     layout="wide",
 )
+
+
+# ==================================================
+# Selector de vista (ANTES de todo lo demás)
+# ==================================================
+vista_selector()
+VISTA = st.session_state["vista"]  # "OFICINA" | "SUBCONTRATOS"
 
 
 # ==================================================
@@ -201,7 +347,7 @@ a[data-testid="stLinkButton"] {{
 
 
 # ==================================================
-# Constantes UI (luego las movemos a settings.py)
+# Constantes UI
 # ==================================================
 PROYECTOS = ["Grupo 3", "Grupo 4", "WF1-WF2", "WF5", "Corredor Verde", "Tintal", "Caracas Sur", "Cambao"]
 
@@ -223,7 +369,14 @@ MESES = [
 # Sidebar filtros
 # ==================================================
 st.sidebar.title("Filtros")
+st.sidebar.markdown(f"**Vista activa:** `{VISTA}`")
 st.sidebar.markdown("---")
+
+# Botón para volver al selector
+if st.sidebar.button("↩ Cambiar vista"):
+    st.session_state["vista"] = None
+    st.session_state["oficina_ok"] = False
+    st.rerun()
 
 modo_critico = st.sidebar.toggle("🔥 Modo crítico (solo actividades sensibles)", value=False)
 modo_backend = "critico" if modo_critico else "normal"
@@ -284,11 +437,17 @@ st.markdown(
     f"Base de precios: **{precios_version}**"
 )
 
+# Vista Subcontratos: panel de carga local (solo UI por ahora)
+if VISTA == "SUBCONTRATOS":
+    render_subcontratos_uploader()
+    st.info(
+        "🧩 Nota: la carga ya queda lista en `st.session_state['local_inputs_dir']`. "
+        "En el siguiente paso conectamos esto con `correr_todo` para que procese esas actas localmente."
+    )
+
 
 # ==================================================
 # Carga BD precios (NORMAL)
-# - Cloud: Drive -> /tmp
-# - Local: ruta local (G:\...) o ENV PRECIOS_ROOT
 # ==================================================
 valores_referencia = {}
 db_path = None
@@ -319,7 +478,6 @@ if not modo_critico:
             download_file(service, file_id, db_path)
 
         else:
-            # LOCAL: intenta con ENV o con tu ruta típica
             precios_root_env = os.environ.get("PRECIOS_ROOT", "").strip()
             if precios_root_env:
                 precios_root = Path(precios_root_env)
@@ -507,7 +665,10 @@ with tab_based:
         carpeta = os.path.basename(os.path.dirname(ruta_bd))
         archivo = os.path.basename(ruta_bd)
         st.markdown(f"**Archivo activo:** `{carpeta}/{archivo}`")
-        st.caption("Esta es la base que el sistema está usando en este momento.")
+        if VISTA == "SUBCONTRATOS":
+            st.caption("Modo Subcontratos: esta BD se usa como SOLO LECTURA.")
+        else:
+            st.caption("Modo Oficina: BD accesible según permisos del entorno (Drive).")
 
     if modo_backend == "normal":
         st.caption("Esto muestra EXACTAMENTE lo que estás usando en modo NORMAL: `valores_referencia`.")
