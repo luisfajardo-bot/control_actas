@@ -569,6 +569,16 @@ if not modo_critico:
         cargar_valores_referencia = backend["cargar_valores_referencia"]
     except Exception:
         cargar_valores_referencia = None
+        # --- Fallback: si el backend no trae cargar_valores_referencia, la armamos aquí sin cambiar el flujo ---
+    if cargar_valores_referencia is None:
+        from control_actas.bd_precios import leer_precios
+
+        def cargar_valores_referencia(db_path_local: Path) -> dict:
+            dfp = leer_precios(db_path_local)
+            if dfp is None or dfp.empty:
+                return {}
+            # mismo contrato: dict {actividad: precio}
+            return {str(r["actividad"]): float(r["precio"]) for _, r in dfp.iterrows()}
 
     try:
         if IS_CLOUD:
@@ -603,8 +613,6 @@ if not modo_critico:
 
             db_path = precios_root / str(precios_version) / "precios_referencia.db"
 
-        if cargar_valores_referencia is None:
-            raise ImportError("No pude obtener 'cargar_valores_referencia' desde el backend activo.")
 
         valores_referencia = cargar_valores_referencia(Path(db_path))
         st.session_state["db_precios_path"] = str(db_path)
@@ -887,6 +895,7 @@ with tab_based:
                 st.caption("Edición deshabilitada: en vista SUBCONTRATOS la BD es SOLO LECTURA.")
             elif modo_critico:
                 st.caption("Edición deshabilitada: estás en MODO CRÍTICO.")
+
 
 
 
