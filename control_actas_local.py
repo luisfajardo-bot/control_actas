@@ -72,24 +72,33 @@ def resolver_base_root(anio_proyecto: Optional[int | str] = None) -> str:
 #  IMPORT DINÁMICO DEL BACKEND (NORMAL / CRÍTICO)
 # =========================================================
 def _import_backend(modo: str):
-    modo = (modo or "").strip().lower()
-    if modo not in ("critico", "normal"):
-        raise ValueError("modo debe ser 'critico' o 'normal'")
+    """
+    Importa el paquete `control_actas` desde el backend correspondiente
+    (control_normal/ o control_critico/) de forma segura para Streamlit.
+    """
+    root = Path(__file__).resolve().parent  # carpeta donde está control_actas_local.py
 
-    backend_root = BACKEND_CRITICO if modo == "critico" else BACKEND_NORMAL
-    if not backend_root.exists():
-        raise FileNotFoundError(f"No existe backend: {backend_root}")
+    if modo == "critico":
+        backend_root = root / "control_critico"
+    else:
+        backend_root = root / "control_normal"
 
+    # 1) asegurar que el backend_root esté primero en sys.path
     backend_root_str = str(backend_root)
     if backend_root_str in sys.path:
         sys.path.remove(backend_root_str)
     sys.path.insert(0, backend_root_str)
 
-    for name in list(sys.modules.keys()):
-        if name == "control_actas" or name.startswith("control_actas."):
-            del sys.modules[name]
+    # 2) limpiar importaciones previas (evita KeyError por estado inconsistente)
+    #    primero submódulos, luego el paquete
+    to_remove = [k for k in list(sys.modules.keys()) if k == "control_actas" or k.startswith("control_actas.")]
+    to_remove.sort(key=len, reverse=True)
+    for k in to_remove:
+        sys.modules.pop(k, None)
 
     importlib.invalidate_caches()
+
+    # 3) importar fresco
     return importlib.import_module("control_actas")
 
 
@@ -111,6 +120,7 @@ def get_backend(modo: str, *, anio_proyecto: Optional[int | str] = None) -> Dict
         "PROJECTS_ROOT": str(get_projects_root()),
         "IS_CLOUD": is_cloud(),
     }
+
 
 
 
