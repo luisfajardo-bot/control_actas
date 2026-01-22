@@ -4,6 +4,11 @@ import sys
 import importlib
 from pathlib import Path
 from typing import Optional, Dict, Any
+from __future__ import annotations
+import importlib.util
+
+
+
 
 # =========================================================
 #  CONFIG CENTRALIZADA DE RUTAS (LOCAL / CLOUD)
@@ -73,33 +78,40 @@ def resolver_base_root(anio_proyecto: Optional[int | str] = None) -> str:
 # =========================================================
 def _import_backend(modo: str):
     """
-    Importa el paquete `control_actas` desde el backend correspondiente
-    (control_normal/ o control_critico/) de forma segura para Streamlit.
+    Carga el paquete control_actas desde control_normal/ o control_critico/
+    usando un NOMBRE ÚNICO para evitar colisiones con hot-reload de Streamlit.
     """
-    root = Path(__file__).resolve().parent  # carpeta donde está control_actas_local.py
+    root = Path(__file__).resolve().parent
 
-    if modo == "critico":
-        backend_root = root / "control_critico"
-    else:
-        backend_root = root / "control_normal"
+    backend_root = root / ("control_critico" if modo == "critico" else "control_normal")
+    pkg_dir = backend_root / "control_actas"
+    init_py = pkg_dir / "__init__.py"
 
-    # 1) asegurar que el backend_root esté primero en sys.path
-    backend_root_str = str(backend_root)
-    if backend_root_str in sys.path:
-        sys.path.remove(backend_root_str)
-    sys.path.insert(0, backend_root_str)
+    if not init_py.exists():
+        raise FileNotFoundError(f"No existe {init_py}")
 
-    # 2) limpiar importaciones previas (evita KeyError por estado inconsistente)
-    #    primero submódulos, luego el paquete
-    to_remove = [k for k in list(sys.modules.keys()) if k == "control_actas" or k.startswith("control_actas.")]
-    to_remove.sort(key=len, reverse=True)
-    for k in to_remove:
-        sys.modules.pop(k, None)
+    # Nombre único del paquete según modo
+    pkg_name = "control_actas_critico" if modo == "critico" else "control_actas_normal"
 
-    importlib.invalidate_caches()
+    # Limpia SOLO lo de este alias (no toca 'control_actas' global)
+    for k in list(sys.modules.keys()):
+        if k == pkg_name or k.startswith(pkg_name + "."):
+            sys.modules.pop(k, None)
 
-    # 3) importar fresco
-    return importlib.import_module("control_actas")
+    # Crea spec de paquete (clave: submodule_search_locations)
+    spec = importlib.util.spec_from_file_location(
+        pkg_name,
+        init_py,
+        submodule_search_locations=[str(pkg_dir)],
+    )
+    if spec is None or spec.loader is None:
+        raise ImportError(f"No se pudo crear spec para {pkg_name}")
+
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[pkg_name] = module
+    spec.loader.exec_module(module)
+
+    return module
 
 
 def get_backend(modo: str, *, anio_proyecto: Optional[int | str] = None) -> Dict[str, Any]:
@@ -120,6 +132,7 @@ def get_backend(modo: str, *, anio_proyecto: Optional[int | str] = None) -> Dict
         "PROJECTS_ROOT": str(get_projects_root()),
         "IS_CLOUD": is_cloud(),
     }
+
 
 
 
