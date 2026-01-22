@@ -80,7 +80,6 @@ def get_or_create_folder(service, parent_id: str, name: str) -> str:
 
 
 
-def sync_actas_mes_desde_drive(service, root_id: str, base_root: Path, proyecto: str, nombre_carpeta_mes: str, anio: int):
 def sync_actas_mes_desde_drive(
     service,
     root_id: str,
@@ -997,5 +996,6 @@ with tab_based:
                 st.caption(f"Registros: {len(df_bn)}")
             else:
                 st.info("`valores_referencia` no es dict. Muestro tal cual:")
+
 
 
