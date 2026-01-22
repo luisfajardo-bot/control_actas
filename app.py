@@ -165,7 +165,22 @@ def render_subcontratos_uploader():
 # ==================================================
 # Entorno
 # ==================================================
-IS_CLOUD = "STREAMLIT_RUNTIME" in os.environ or "STREAMLIT_SERVER_HEADLESS" in os.environ
+def detectar_cloud() -> bool:
+    try:
+        # En Streamlit Cloud, secrets siempre existe
+        if "DRIVE_ROOT_FOLDER_ID" in st.secrets:
+            return True
+    except Exception:
+        pass
+
+    # respaldo por variables de entorno
+    return any(k in os.environ for k in [
+        "STREAMLIT_RUNTIME",
+        "STREAMLIT_SERVER_HEADLESS",
+    ])
+
+IS_CLOUD = detectar_cloud()
+
 
 
 # ==================================================
@@ -708,6 +723,7 @@ with tab_based:
             else:
                 st.info("`ACTIVIDADES_CRITICAS` no es dict. Muestro tal cual:")
                 st.write(ACTIVIDADES_CRITICAS)
+
 
 
 
