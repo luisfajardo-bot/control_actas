@@ -82,6 +82,7 @@ def vista_selector():
 
         oficina_key = None
         try:
+            temp = st.secrets.get("OFICINA_KEY ")
             oficina_key = st.secrets.get("OFICINA_KEY", None)
         except Exception:
             oficina_key = os.environ.get("OFICINA_KEY")
@@ -91,7 +92,7 @@ def vista_selector():
                 st.session_state["oficina_ok"] = True
                 st.success("Acceso concedido ✅")
             else:
-                st.error(oficina_key)
+                st.error(temp)
                 st.error("Clave incorrecta ❌")
                 st.stop()
 
@@ -708,6 +709,7 @@ with tab_based:
             else:
                 st.info("`ACTIVIDADES_CRITICAS` no es dict. Muestro tal cual:")
                 st.write(ACTIVIDADES_CRITICAS)
+
 
 
 
