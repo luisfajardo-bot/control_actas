@@ -11,110 +11,8 @@ from control_actas_local import get_backend
 
 
 # ==================================================
-# Drive utils (import robusto: raíz o utils/)
-# ==================================================
-try:
-    from utils.drive_utils import (
-        get_drive_service,
-        list_folders,
-        find_child_folder,
-        find_file,
-        download_file,
-    )
-except Exception:
-    from drive_utils import (
-        get_drive_service,
-        list_folders,
-        find_child_folder,
-        find_file,
-        download_file,
-    )
-
-
-# ==================================================
 # Helpers
 # ==================================================
-def list_files_in_folder(service, folder_id: str):
-    """
-    Lista archivos (no carpetas) dentro de un folder de Drive.
-    Retorna items con keys: id, name, mimeType.
-    """
-    q = f"'{folder_id}' in parents and trashed=false"
-    fields = "nextPageToken, files(id,name,mimeType)"
-    out = []
-    page_token = None
-
-    while True:
-        resp = service.files().list(
-            q=q,
-            fields=fields,
-            pageToken=page_token,
-            supportsAllDrives=True,
-            includeItemsFromAllDrives=True,
-        ).execute()
-
-        out.extend(resp.get("files", []))
-        page_token = resp.get("nextPageToken")
-        if not page_token:
-            break
-
-    return out
-
-
-def sync_actas_mes_desde_drive(
-    service,
-    root_id: str,
-    base_root: Path,
-    proyecto: str,
-    nombre_carpeta_mes: str,
-    anio: int,
-):
-    """
-    Descarga a filesystem local (Cloud) los .xlsx del mes para que el backend los vea.
-    Supone estructura Drive:
-      root_id / (Subcontratos opcional) / <anio> / <proyecto> / control_actas / actas / <mes>
-    """
-    # Estructura objetivo local (la que tu backend ya espera)
-    local_mes = base_root / str(anio) / proyecto / "control_actas" / "actas" / nombre_carpeta_mes
-    local_mes.mkdir(parents=True, exist_ok=True)
-
-    # ---- Drive: navegar a la carpeta del mes ----
-    # Si tu DRIVE_ROOT_FOLDER_ID ya apunta a Subcontratos, este find devuelve None y usamos root_id
-    subcontratos_id = find_child_folder(service, root_id, "Subcontratos") or root_id
-
-    anio_id = find_child_folder(service, subcontratos_id, str(anio))
-    if not anio_id:
-        raise FileNotFoundError(f"No existe año {anio} en Drive (dentro de root).")
-
-    proyecto_id = find_child_folder(service, anio_id, proyecto)
-    if not proyecto_id:
-        raise FileNotFoundError(f"No existe proyecto '{proyecto}' en Drive para {anio}.")
-
-    ca_id = find_child_folder(service, proyecto_id, "control_actas")
-    if not ca_id:
-        raise FileNotFoundError("No existe carpeta 'control_actas' dentro del proyecto en Drive.")
-
-    actas_id = find_child_folder(service, ca_id, "actas")
-    if not actas_id:
-        raise FileNotFoundError("No existe carpeta 'actas' dentro de 'control_actas' en Drive.")
-
-    mes_id = find_child_folder(service, actas_id, nombre_carpeta_mes)
-    if not mes_id:
-        raise FileNotFoundError(f"No existe carpeta de mes '{nombre_carpeta_mes}' en Drive.")
-
-    # Listar archivos y descargar xlsx
-    items = list_files_in_folder(service, mes_id)
-
-    descargados = 0
-    for it in items:
-        name = (it.get("name") or "")
-        if name.lower().endswith(".xlsx"):
-            download_file(service, it["id"], local_mes / name)
-            descargados += 1
-
-    return local_mes, descargados
-
-
 def formatear_numeros_df(df: pd.DataFrame) -> pd.DataFrame:
     """Miles + 2 decimales para columnas numéricas (sin modificar original)."""
     df_fmt = df.copy()
@@ -169,8 +67,9 @@ def vista_selector():
         st.write("- Procesa archivos subidos (.zip / .xlsx).")
         if st.button("Entrar a Subcontratos"):
             st.session_state["vista"] = "SUBCONTRATOS"
-            st.session_state["oficina_ok"] = False
+            st.session_state["oficina_ok"] = False  # por si venían de oficina
 
+    # Si no han elegido vista, paramos aquí
     if st.session_state["vista"] is None:
         st.stop()
 
@@ -180,7 +79,9 @@ def vista_selector():
         st.subheader("🔐 Acceso OFICINA")
 
         clave = st.text_input("Palabra clave", type="password")
+
         oficina_key = st.secrets["OFICINA_KEY"] if "OFICINA_KEY" in st.secrets else None
+
 
         if st.button("Validar"):
             if oficina_key is None:
@@ -194,7 +95,7 @@ def vista_selector():
             else:
                 st.error("Clave incorrecta ❌")
                 st.stop()
-
+        # Si es oficina y no está ok, frenamos
         if st.session_state["vista"] == "OFICINA" and not st.session_state["oficina_ok"]:
             st.stop()
 
@@ -202,6 +103,7 @@ def vista_selector():
 def render_subcontratos_uploader():
     """
     UI de carga local para la vista SUBCONTRATOS.
+    Aquí NO tocamos tu backend todavía, solo dejamos listo un folder temporal con los archivos.
     """
     st.markdown("## 🧰 Subcontratos: carga local")
     st.caption("Sube un .zip con actas o un .xlsx individual. Se guardan temporalmente para procesar local.")
@@ -226,6 +128,7 @@ def render_subcontratos_uploader():
             st.caption(f"Ruta temporal: `{st.session_state['local_inputs_dir']}`")
         return
 
+    # Crear dir temporal limpio
     _reset_local_inputs()
     tmp_dir = Path(tempfile.mkdtemp(prefix="actas_local_"))
 
@@ -262,20 +165,44 @@ def render_subcontratos_uploader():
 # ==================================================
 # Entorno
 # ==================================================
+IS_CLOUD = "STREAMLIT_RUNTIME" in os.environ or "STREAMLIT_SERVER_HEADLESS" in os.environ
 def detectar_cloud() -> bool:
     try:
+        # En Streamlit Cloud, secrets siempre existe
         if "DRIVE_ROOT_FOLDER_ID" in st.secrets:
             return True
     except Exception:
         pass
 
+    # respaldo por variables de entorno
     return any(k in os.environ for k in [
         "STREAMLIT_RUNTIME",
         "STREAMLIT_SERVER_HEADLESS",
     ])
 
-
 IS_CLOUD = detectar_cloud()
+
+
+
+# ==================================================
+# Drive utils (import robusto: raíz o utils/)
+# ==================================================
+try:
+    from utils.drive_utils import (
+        get_drive_service,
+        list_folders,
+        find_child_folder,
+        find_file,
+        download_file,
+    )
+except Exception:
+    from drive_utils import (
+        get_drive_service,
+        list_folders,
+        find_child_folder,
+        find_file,
+        download_file,
+    )
 
 
 # ==================================================
@@ -462,6 +389,7 @@ st.sidebar.title("Filtros")
 st.sidebar.markdown(f"**Vista activa:** `{VISTA}`")
 st.sidebar.markdown("---")
 
+# Botón para volver al selector
 if st.sidebar.button("↩ Cambiar vista"):
     st.session_state["vista"] = None
     st.session_state["oficina_ok"] = False
@@ -484,6 +412,7 @@ st.session_state["anio_proyecto"] = anio_proyecto
 mes = st.sidebar.selectbox("Mes", MESES)
 nombre_carpeta_mes = f"{mes}{anio_proyecto}"
 
+# Base de precios independiente
 st.sidebar.markdown("---")
 if not modo_critico:
     VERSIONES_FALLBACK = ["2024", "2025", "2026"]
@@ -525,10 +454,12 @@ st.markdown(
     f"Base de precios: **{precios_version}**"
 )
 
+# Vista Subcontratos: panel de carga local (solo UI por ahora)
 if VISTA == "SUBCONTRATOS":
     render_subcontratos_uploader()
     st.info(
-        "🧩 Nota: la carga ya queda lista en `st.session_state['local_inputs_dir']`."
+        "🧩 Nota: la carga ya queda lista en `st.session_state['local_inputs_dir']`. "
+        "En el siguiente paso conectamos esto con `correr_todo` para que procese esas actas localmente."
     )
 
 
@@ -610,20 +541,6 @@ with tab_run:
         if correr_todos_los_meses is None:
             st.warning("En modo crítico no está habilitado 'Procesar todas las carpetas'.")
         else:
-            # En CLOUD (y Oficina), sincronizamos al menos el mes seleccionado.
-            if IS_CLOUD and VISTA == "OFICINA":
-                try:
-                    service = get_drive_service()
-                    root_id = st.secrets["DRIVE_ROOT_FOLDER_ID"]
-                    local_mes, n = sync_actas_mes_desde_drive(
-                        service, root_id, Path(BASE_ROOT), proyecto, nombre_carpeta_mes, anio_proyecto
-                    )
-                    st.caption(f"☁️ Actas sincronizadas para {nombre_carpeta_mes}: {n} archivos en `{local_mes}`")
-                except Exception as e:
-                    st.error("No se pudieron sincronizar actas desde Drive.")
-                    st.exception(e)
-                    st.stop()
-
             with st.spinner("Procesando todas las carpetas del proyecto..."):
                 resultados = correr_todos_los_meses(BASE_ROOT, proyecto, valores_referencia)
 
@@ -641,20 +558,6 @@ with tab_run:
 
     st.subheader("Ejecución")
     if procesar_btn:
-        # Si estás en CLOUD+OFICINA, baja las actas del mes antes de correr
-        if IS_CLOUD and VISTA == "OFICINA":
-            try:
-                service = get_drive_service()
-                root_id = st.secrets["DRIVE_ROOT_FOLDER_ID"]
-                local_mes, n = sync_actas_mes_desde_drive(
-                    service, root_id, Path(BASE_ROOT), proyecto, nombre_carpeta_mes, anio_proyecto
-                )
-                st.caption(f"☁️ Actas sincronizadas: {n} archivos en `{local_mes}`")
-            except Exception as e:
-                st.error("No se pudieron sincronizar actas desde Drive.")
-                st.exception(e)
-                st.stop()
-
         with st.spinner("Procesando actas, por favor espera..."):
             info = correr_todo(
                 BASE_ROOT,
@@ -796,6 +699,30 @@ with tab_based:
             else:
                 st.info("`valores_referencia` no es dict. Muestro tal cual:")
                 st.write(valores_referencia)
+
+    if modo_backend == "critico":
+        st.caption("Modo CRÍTICO: muestra `ACTIVIDADES_CRITICAS` si existe.")
+        try:
+            from control_actas.config import ACTIVIDADES_CRITICAS
+        except Exception as e:
+            ACTIVIDADES_CRITICAS = None
+            st.error(f"No pude importar ACTIVIDADES_CRITICAS: {e}")
+
+        if not ACTIVIDADES_CRITICAS:
+            st.warning("`ACTIVIDADES_CRITICAS` está vacío o no existe.")
+        else:
+            if isinstance(ACTIVIDADES_CRITICAS, dict):
+                sample_val = next(iter(ACTIVIDADES_CRITICAS.values()))
+                if isinstance(sample_val, (int, float)):
+                    df_bc = pd.DataFrame([{"actividad": k, "precio": v} for k, v in ACTIVIDADES_CRITICAS.items()])
+                else:
+                    df_bc = pd.DataFrame(
+                        [{"actividad": k, **(v if isinstance(v, dict) else {"valor": v})} for k, v in ACTIVIDADES_CRITICAS.items()]
+                    )
+                st.dataframe(df_bc, use_container_width=True, hide_index=True)
+                st.caption(f"Registros: {len(df_bc)}")
+            else:
+                st.info("`ACTIVIDADES_CRITICAS` no es dict. Muestro tal cual:")
 
 
 
