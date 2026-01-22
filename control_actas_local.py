@@ -6,7 +6,6 @@ import sys
 import tempfile
 import importlib
 from pathlib import Path
-from typing import Optional, Dict, Any
 from typing import Optional, Dict, Any, Callable
 
 _BACKEND_CACHE: dict[str, Any] = {}   # {"normal": module, "critico": module}
@@ -44,7 +43,6 @@ def _set_backend_path(modo: str) -> str:
     # Saca el path del modo contrario si está
     for other_modo, other_path in list(_BACKEND_PATHS.items()):
         if other_modo != modo and other_path in sys.path:
-            sys.path.remove(other_path)
             try:
                 sys.path.remove(other_path)
             except ValueError:
@@ -52,7 +50,6 @@ def _set_backend_path(modo: str) -> str:
 
     # Reinsertar este path al inicio
     if backend_root_str in sys.path:
-        sys.path.remove(backend_root_str)
         try:
             sys.path.remove(backend_root_str)
         except ValueError:
@@ -68,7 +65,6 @@ def _purge_control_actas_modules():
     Limpia módulos cargados de 'control_actas' y submódulos.
     Esto evita choques cuando cambias entre backends (normal/critico) en caliente.
     """
-    to_delete = [k for k in sys.modules.keys() if k == "control_actas" or k.startswith("control_actas.")]
     to_delete = [k for k in list(sys.modules.keys()) if k == "control_actas" or k.startswith("control_actas.")]
     for k in to_delete:
         try:
@@ -88,7 +84,6 @@ def _import_backend(modo: str):
 
     _set_backend_path(modo)
 
-    # Import “fresco” para evitar KeyError / mezclas de módulos entre modos
     # Import “fresco” para evitar mezclas de módulos entre modos
     _purge_control_actas_modules()
 
@@ -108,54 +103,63 @@ def resolver_base_root(*, anio_proyecto: Optional[int | str] = None) -> Path:
     return Path(r"G:\Mi unidad\Subcontratos")
 
 
-def _fallback_cargar_valores_referencia(db_path: Path) -> dict:
+def _fallback_cargar_valores_referencia(backend_pkg: Any) -> Callable[[Path], dict]:
     """
-    Fallback oficial: arma dict {actividad: precio} leyendo la tabla 'precios'.
-    Esto mantiene la lógica de app.py: siempre existe backend["cargar_valores_referencia"].
+    Devuelve una función compatible con app.py:
+      cargar_valores_referencia(Path(db)) -> dict {actividad: precio}
+
+    Si el backend tiene bd_precios.leer_precios(), lo usa.
+    Si no, cae a lectura directa con sqlite.
     """
-    # Import local para no depender de que el backend "control_actas.bd_precios" exista fuera del modo
-    from control_actas.bd_precios import leer_precios  # usa el bd_precios del backend cargado
-
-    df = leer_precios(db_path)
-    if df is None or df.empty:
-        return {}
-
-    out: dict[str, float] = {}
-    for _, r in df.iterrows():
-        act = str(r.get("actividad", "")).strip()
-        if not act:
-            continue
-        try:
-            out[act] = float(r.get("precio"))
-        except Exception:
-            # si hay un precio raro, lo ignoramos (mejor que tumbar todo)
-            continue
-    return out
-
-
-def _resolver_cargar_valores_referencia(backend_module: Any) -> Callable[[Path], dict]:
-    """
-    Intenta encontrar una función 'cargar_valores_referencia' en el backend.
-    Si no existe, retorna el fallback basado en leer_precios().
-    """
-    # 1) Si el backend trae explícitamente una función, úsala
+    bp = None
     try:
-        fn = getattr(getattr(backend_module, "bd_precios"), "cargar_valores_referencia")
-        if callable(fn):
-            return fn
+        bp = backend_pkg.bd_precios  # type: ignore[attr-defined]
     except Exception:
-        pass
+        bp = None
 
-    # 2) Si existe como import directo en el backend
-    try:
-        from control_actas.bd_precios import cargar_valores_referencia as fn2  # type: ignore
-        if callable(fn2):
-            return fn2  # type: ignore[return-value]
-    except Exception:
-        pass
+    def _cvr(db_path_local: Path) -> dict:
+        if not db_path_local:
+            return {}
+        db_path_local = Path(db_path_local)
 
-    # 3) Fallback estable (nuestro)
-    return _fallback_cargar_valores_referencia
+        # Si el backend trae leer_precios, úsalo
+        if bp is not None and hasattr(bp, "leer_precios"):
+            try:
+                dfp = bp.leer_precios(db_path_local)  # type: ignore[attr-defined]
+            except Exception:
+                return {}
+        else:
+            # Último fallback: leer directo con sqlite
+            try:
+                import sqlite3
+                import pandas as pd
+
+                con = sqlite3.connect(str(db_path_local))
+                try:
+                    dfp = pd.read_sql_query(
+                        "SELECT actividad, precio FROM precios ORDER BY actividad",
+                        con
+                    )
+                finally:
+                    con.close()
+            except Exception:
+                return {}
+
+        if dfp is None or getattr(dfp, "empty", True):
+            return {}
+
+        out: dict[str, float] = {}
+        for _, r in dfp.iterrows():
+            act = str(r.get("actividad", "")).strip()
+            if not act:
+                continue
+            try:
+                out[act] = float(r.get("precio"))
+            except Exception:
+                continue
+        return out
+
+    return _cvr
 
 
 def get_backend(modo: str, *, anio_proyecto: Optional[int | str] = None) -> Dict[str, Any]:
@@ -170,21 +174,19 @@ def get_backend(modo: str, *, anio_proyecto: Optional[int | str] = None) -> Dict
     base_root_path = resolver_base_root(anio_proyecto=anio_proyecto)
     base_root_path.mkdir(parents=True, exist_ok=True)
 
-    # Exponer función de BD precios desde el backend importado (evita imports globales en Cloud)
+    # Exponer función de BD precios desde el backend importado si existe
     cargar_valores_referencia = None
     try:
-        # Lo usual: control_actas.bd_precios.cargar_valores_referencia
-        cargar_valores_referencia = backend.bd_precios.cargar_valores_referencia  # type: ignore[attr-defined]
+        if hasattr(backend, "bd_precios") and hasattr(backend.bd_precios, "cargar_valores_referencia"):
+            cargar_valores_referencia = backend.bd_precios.cargar_valores_referencia  # type: ignore[attr-defined]
     except Exception:
-        try:
-            from control_actas.bd_precios import cargar_valores_referencia as _cvr  # type: ignore
-            cargar_valores_referencia = _cvr
-        except Exception:
-            cargar_valores_referencia = None
-    cargar_valores_referencia = _resolver_cargar_valores_referencia(backend)
+        cargar_valores_referencia = None
+
+    # Fallback: siempre devolver una función válida
+    if cargar_valores_referencia is None:
+        cargar_valores_referencia = _fallback_cargar_valores_referencia(backend)
 
     return {
-        "BASE_ROOT": str(base_root),
         "BASE_ROOT": str(base_root_path),
         "BASE_ROOT_PATH": base_root_path,
 
@@ -192,10 +194,8 @@ def get_backend(modo: str, *, anio_proyecto: Optional[int | str] = None) -> Dict
         "correr_todos_los_meses": getattr(backend, "correr_todos_los_meses", None),
         "listar_carpetas_mes": backend.listar_carpetas_mes,
 
-        # Para que app.py NO tenga que importar 'control_actas' globalmente
         "cargar_valores_referencia": cargar_valores_referencia,
     }
-
 
 
 
