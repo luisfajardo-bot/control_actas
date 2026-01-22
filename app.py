@@ -69,7 +69,7 @@ def sync_actas_mes_desde_drive(service, root_id: str, base_root: Path, proyecto:
     Versión robusta: prueba varias estructuras de Drive y, si falla, muestra diagnóstico.
     """
     # Estructura objetivo local (la que tu backend ya espera)
-    local_mes = base_root / str(anio) / proyecto / "control_actas" / "actas" / nombre_carpeta_mes
+    local_mes = base_root / proyecto / "control_actas" / "actas" / nombre_carpeta_mes
     local_mes.mkdir(parents=True, exist_ok=True)
 
     # -------- helpers internos --------
@@ -545,6 +545,17 @@ procesar_btn = st.sidebar.button("🚀 Procesar actas")
 # ==================================================
 backend = get_backend(modo_backend, anio_proyecto=anio_proyecto)
 BASE_ROOT = backend["BASE_ROOT"]
+#TEMPORAL TEMPORAL
+st.write("✅ Carpeta local_mes:", str(local_mes))
+st.write("✅ XLSX descargados:", [p.name for p in Path(local_mes).glob("*.xlsx")])
+st.write("✅ BASE_ROOT:", BASE_ROOT)
+
+# Carpeta que el backend va a mirar (según el patrón SIN año)
+expected = Path(BASE_ROOT) / proyecto / "control_actas" / "actas" / nombre_carpeta_mes
+st.write("🔎 Backend esperaría:", str(expected))
+st.write("Existe expected?:", expected.exists())
+st.write("XLSX en expected:", [p.name for p in expected.glob("*.xlsx")])
+# HASTA AQUI ES TEMPORAL
 correr_todo = backend["correr_todo"]
 correr_todos_los_meses = backend.get("correr_todos_los_meses")
 listar_carpetas_mes = backend["listar_carpetas_mes"]
@@ -834,6 +845,7 @@ with tab_based:
             else:
                 st.info("`valores_referencia` no es dict. Muestro tal cual:")
                 st.write(valores_referencia)
+
 
 
 
