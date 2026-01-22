@@ -6,6 +6,8 @@ from pathlib import Path
 from control_actas_local import get_backend
 # DESDE AQUI
 import streamlit as st
+st.write("Secrets disponibles:", list(st.secrets.keys()))
+
 
 st.write("Secrets keys:", list(st.secrets.keys()))
 st.write("Tipo JSON secret:", type(st.secrets.get("GDRIVE_SERVICE_ACCOUNT_JSON")))
@@ -670,6 +672,7 @@ with tab_based:
             else:
                 st.info("`ACTIVIDADES_CRITICAS` no es dict. Muestro tal cual:")
                 st.write(ACTIVIDADES_CRITICAS)
+
 
 
 
