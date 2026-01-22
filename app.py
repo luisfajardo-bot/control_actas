@@ -21,6 +21,7 @@ try:
         list_folders,
         find_child_folder,
         find_file,
+        upload_or_update_file
         download_file,
     )
 except Exception:
@@ -29,6 +30,7 @@ except Exception:
         list_folders,
         find_child_folder,
         find_file,
+        upload_or_update_file
         download_file,
     )
 
@@ -61,6 +63,15 @@ def list_files_in_folder(service, folder_id: str):
             break
 
     return out
+    
+def get_or_create_folder(service, parent_id: str, name: str) -> str:
+    fid = find_child_folder(service, parent_id, name)
+    if fid:
+        return fid
+    meta = {"name": name, "mimeType": "application/vnd.google-apps.folder", "parents": [parent_id]}
+    created = service.files().create(body=meta, fields="id").execute()
+    return created["id"]
+
 
 
 def sync_actas_mes_desde_drive(service, root_id: str, base_root: Path, proyecto: str, nombre_carpeta_mes: str, anio: int):
@@ -296,6 +307,43 @@ def render_subcontratos_uploader():
         st.success("XLSX cargado ✅")
         st.caption(f"Archivo guardado en: `{xlsx_path}`")
 
+def exportar_resultados_a_drive(service, root_id: str, proyecto: str, nombre_carpeta_mes: str, info: dict):
+    """
+    Sube outputs a Drive con esta estructura (desde tu ROOT actual):
+    ROOT / {proyecto} / control_actas / salidas / {mes}
+    ROOT / {proyecto} / control_actas / resumen / {mes}
+    ROOT / {proyecto} / control_actas / datos / base_general.xlsx
+    ROOT / {proyecto} / control_actas / resumen / resumen_global.xlsx
+    """
+    proyecto_id = get_or_create_folder(service, root_id, proyecto)
+    ca_id = get_or_create_folder(service, proyecto_id, "control_actas")
+
+    salidas_id = get_or_create_folder(service, ca_id, "salidas")
+    resumen_id = get_or_create_folder(service, ca_id, "resumen")
+    datos_id   = get_or_create_folder(service, ca_id, "datos")
+
+    salidas_mes_id = get_or_create_folder(service, salidas_id, nombre_carpeta_mes)
+    resumen_mes_id = get_or_create_folder(service, resumen_id, nombre_carpeta_mes)
+
+    mime_xlsx = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+    # Salidas del mes
+    for p in Path(info["carpeta_salida_mes"]).glob("*.xlsx"):
+        upload_or_update_file(service, salidas_mes_id, p, mime_xlsx)
+
+    # Resumen del mes
+    for p in Path(info["carpeta_resumen_mes"]).glob("*.xlsx"):
+        upload_or_update_file(service, resumen_mes_id, p, mime_xlsx)
+
+    # Base general
+    base_general = Path(info["carpeta_datos"]) / "base_general.xlsx"
+    if base_general.exists():
+        upload_or_update_file(service, datos_id, base_general, mime_xlsx)
+
+    # Resumen global
+    resumen_global = Path(info["carpeta_resumen"]) / "resumen_global.xlsx"
+    if resumen_global.exists():
+        upload_or_update_file(service, resumen_id, resumen_global, mime_xlsx)
 
 # ==================================================
 # Entorno
@@ -702,6 +750,18 @@ with tab_run:
                 valores_referencia,
                 modo_critico=modo_critico,
             )
+            if IS_CLOUD and VISTA == "OFICINA":
+                try:
+                    service = get_drive_service()
+                    root_id = st.secrets["DRIVE_ROOT_FOLDER_ID"]
+            
+                    with st.spinner("☁️ Subiendo resultados a Drive..."):
+                        exportar_resultados_a_drive(service, root_id, proyecto, nombre_carpeta_mes, info)
+            
+                    st.success("✅ Resultados subidos/actualizados en Drive.")
+                except Exception as e:
+                    st.error("❌ Falló la subida a Drive.")
+                    st.exception(e)
 
         st.success("Proceso completado ✅")
 
@@ -835,6 +895,7 @@ with tab_based:
             else:
                 st.info("`valores_referencia` no es dict. Muestro tal cual:")
                 st.write(valores_referencia)
+
 
 
 
