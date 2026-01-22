@@ -82,6 +82,7 @@ def vista_selector():
 
         oficina_key = None
     if "OFICINA_KEY" in st.secrets:
+        print("Entramos muchachos")
         oficina_key = st.secrets["OFICINA_KEY"]
     else:
         oficina_key = os.environ.get("OFICINA_KEY")
@@ -707,6 +708,7 @@ with tab_based:
             else:
                 st.info("`ACTIVIDADES_CRITICAS` no es dict. Muestro tal cual:")
                 st.write(ACTIVIDADES_CRITICAS)
+
 
 
 
