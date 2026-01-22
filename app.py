@@ -17,6 +17,11 @@ from drive_utils import get_drive_service, list_folders
 st.subheader("🔌 Test Drive (Cloud)")
 
 service = get_drive_service()
+sa_json = st.secrets["GDRIVE_SERVICE_ACCOUNT_JSON"]
+
+st.write("Primeros 50 chars del JSON:", sa_json[:50])
+st.write("Últimos 50 chars del JSON:", sa_json[-50:])
+
 root_id = st.secrets["DRIVE_ROOT_FOLDER_ID"]
 folders = list_folders(service, root_id)
 
@@ -669,6 +674,7 @@ with tab_based:
             else:
                 st.info("`ACTIVIDADES_CRITICAS` no es dict. Muestro tal cual:")
                 st.write(ACTIVIDADES_CRITICAS)
+
 
 
 
