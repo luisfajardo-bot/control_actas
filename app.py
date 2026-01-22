@@ -98,6 +98,7 @@ def get_precios_root() -> Path:
 
 
 def construir_db_path(precios_root: Path, version: str) -> str:
+    print(str(precios_root / str(version) / "precios_referencia.db"))
     return str(precios_root / str(version) / "precios_referencia.db")
 
 
@@ -672,6 +673,7 @@ with tab_based:
             else:
                 st.info("`ACTIVIDADES_CRITICAS` no es dict. Muestro tal cual:")
                 st.write(ACTIVIDADES_CRITICAS)
+
 
 
 
