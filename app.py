@@ -8,6 +8,8 @@ import streamlit as st
 import pandas as pd
 
 from control_actas_local import get_backend
+from control_actas.bd_precios import cargar_valores_referencia
+
 
 
 # ==================================================
@@ -796,6 +798,7 @@ with tab_based:
             else:
                 st.info("`valores_referencia` no es dict. Muestro tal cual:")
                 st.write(valores_referencia)
+
 
 
 
