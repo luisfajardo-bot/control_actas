@@ -79,22 +79,17 @@ def vista_selector():
         st.markdown("---")
         st.subheader("🔐 Acceso OFICINA")
         clave = st.text_input("Palabra clave", type="password")
-
-        oficina_key = None
-        st.write("OFICINA_KEY en secrets:", "OFICINA_KEY" in st.secrets)
-        st.write("OFICINA_KEY en env:", os.environ.get("OFICINA_KEY") is not None)
-        st.write("Longitud secret:", len(oficina_key) if oficina_key else None)
-
-    if "OFICINA_KEY" in st.secrets:
-        print("Entramos muchachos")
-        oficina_key = st.secrets["OFICINA_KEY"]
-    else:
-        oficina_key = os.environ.get("OFICINA_KEY")
-
+    
+        if "OFICINA_KEY" in st.secrets:
+            oficina_key = st.secrets["OFICINA_KEY"]
+        else:
+            oficina_key = os.environ.get("OFICINA_KEY")
+    
         if st.button("Validar"):
-            if clave == oficina_key:
+            if (clave or "").strip() == (oficina_key or "").strip():
                 st.session_state["oficina_ok"] = True
                 st.success("Acceso concedido ✅")
+                st.rerun()
             else:
                 st.error("Clave incorrecta ❌")
                 st.stop()
@@ -712,6 +707,7 @@ with tab_based:
             else:
                 st.info("`ACTIVIDADES_CRITICAS` no es dict. Muestro tal cual:")
                 st.write(ACTIVIDADES_CRITICAS)
+
 
 
 
