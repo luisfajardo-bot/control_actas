@@ -3,6 +3,8 @@ import streamlit as st
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
+from pathlib import Path
+
 
 SCOPES = ["https://www.googleapis.com/auth/drive"]
 
@@ -71,3 +73,27 @@ def detectar_versiones_precios(service, precios_root_id, fallback):
     folders = list_folders(service, precios_root_id)
     return sorted([f["name"] for f in folders]) or fallback
 
+def upload_or_update_file(service, parent_folder_id: str, local_path: str | Path, mime_type: str):
+    """
+    Sube el archivo a Drive dentro de parent_folder_id.
+    Si ya existe un archivo con el mismo nombre en esa carpeta, lo actualiza.
+    """
+    from googleapiclient.http import MediaFileUpload
+
+    local_path = Path(local_path)
+    filename = local_path.name
+
+    q = f"'{parent_folder_id}' in parents and name = '{filename}' and trashed = false"
+    res = service.files().list(q=q, fields="files(id,name)", pageSize=10).execute()
+    files = res.get("files", [])
+
+    media = MediaFileUpload(str(local_path), mimetype=mime_type, resumable=True)
+
+    if files:
+        file_id = files[0]["id"]
+        service.files().update(fileId=file_id, media_body=media).execute()
+        return file_id, "updated"
+
+    meta = {"name": filename, "parents": [parent_folder_id]}
+    created = service.files().create(body=meta, media_body=media, fields="id").execute()
+    return created["id"], "created"
