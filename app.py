@@ -11,8 +11,7 @@ st.write("Secrets disponibles:", list(st.secrets.keys()))
 
 
 st.write("Secrets keys:", list(st.secrets.keys()))
-st.write("Tipo JSON secret:", type(st.secrets.get("GDRIVE_SERVICE_ACCOUNT_JSON")))
-st.write("Longitud JSON secret:", len(str(st.secrets.get("GDRIVE_SERVICE_ACCOUNT_JSON", ""))))
+
 
 
 from drive_utils import get_drive_service, list_folders
@@ -673,6 +672,7 @@ with tab_based:
             else:
                 st.info("`ACTIVIDADES_CRITICAS` no es dict. Muestro tal cual:")
                 st.write(ACTIVIDADES_CRITICAS)
+
 
 
 
