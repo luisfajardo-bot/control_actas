@@ -4,6 +4,7 @@ import pandas as pd
 from pathlib import Path
 
 from control_actas_local import get_backend
+"""
 # DESDE AQUI
 import streamlit as st
 st.write("Secrets disponibles:", list(st.secrets.keys()))
@@ -27,7 +28,7 @@ st.write(list(st.secrets.keys()))
 
 
 #HASTA AQUI
-
+"""
 def formatear_numeros_df(df: pd.DataFrame) -> pd.DataFrame:
     """
     Formatea columnas numéricas:
@@ -672,6 +673,7 @@ with tab_based:
             else:
                 st.info("`ACTIVIDADES_CRITICAS` no es dict. Muestro tal cual:")
                 st.write(ACTIVIDADES_CRITICAS)
+
 
 
 
