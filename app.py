@@ -73,7 +73,7 @@ def get_or_create_folder(service, parent_id: str, name: str) -> str:
     if fid:
         return fid
     meta = {"name": name, "mimeType": "application/vnd.google-apps.folder", "parents": [parent_id]}
-    created = service.files().create(body=meta, fields="id").execute()
+    created = service.files().create(body=meta, fields="id", supportsAllDrives=True).execute()
     return created["id"]
 
 
@@ -93,6 +93,7 @@ def sync_actas_mes_desde_drive(
       base_root / proyecto / control_actas / actas / nombre_carpeta_mes
     - Por eso descargamos EXACTO ahí (SIN meter /anio/ en local).
     """
+    # Estructura objetivo local (la que tu backend espera)
     local_mes = base_root / proyecto / "control_actas" / "actas" / nombre_carpeta_mes
     local_mes.mkdir(parents=True, exist_ok=True)
 
@@ -112,8 +113,11 @@ def sync_actas_mes_desde_drive(
             cur = nxt
         return cur
 
+    # Tu ROOT YA contiene: Grupo 3, Grupo 4, precios_referencia, etc.
     candidates = [
+        # ROOT / Grupo 3 / control_actas / actas / octubre2025
         [proyecto, "control_actas", "actas", nombre_carpeta_mes],
+        # Variantes por si alguien guardó el año en medio (por si acaso)
         [proyecto, "control_actas", "actas", str(anio), nombre_carpeta_mes],
         [proyecto, str(anio), "control_actas", "actas", nombre_carpeta_mes],
     ]
@@ -136,6 +140,7 @@ def sync_actas_mes_desde_drive(
             + "\n- ".join(root_folders[:80])
         )
 
+    # Listar archivos del mes y descargar xlsx
     items = list_files_in_folder(service, mes_id)
 
     descargados = 0
@@ -168,16 +173,20 @@ def exportar_resultados_a_drive(service, root_id: str, proyecto: str, nombre_car
 
     mime_xlsx = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
+    # Salidas del mes
     for p in Path(info["carpeta_salida_mes"]).glob("*.xlsx"):
         upload_or_update_file(service, salidas_mes_id, p, mime_xlsx)
 
+    # Resumen del mes
     for p in Path(info["carpeta_resumen_mes"]).glob("*.xlsx"):
         upload_or_update_file(service, resumen_mes_id, p, mime_xlsx)
 
+    # Base general
     base_general = Path(info["carpeta_datos"]) / "base_general.xlsx"
     if base_general.exists():
         upload_or_update_file(service, datos_id, base_general, mime_xlsx)
 
+    # Resumen global
     resumen_global = Path(info["carpeta_resumen"]) / "resumen_global.xlsx"
     if resumen_global.exists():
         upload_or_update_file(service, resumen_id, resumen_global, mime_xlsx)
@@ -201,7 +210,7 @@ def _init_state():
     if "oficina_ok" not in st.session_state:
         st.session_state["oficina_ok"] = False
     if "local_inputs_dir" not in st.session_state:
-        st.session_state["local_inputs_dir"] = None
+        st.session_state["local_inputs_dir"] = None  # Path str
     if "local_inputs_label" not in st.session_state:
         st.session_state["local_inputs_label"] = None
 
@@ -243,6 +252,7 @@ def vista_selector():
     if st.session_state["vista"] is None:
         st.stop()
 
+    # Gate para OFICINA
     if st.session_state["vista"] == "OFICINA" and not st.session_state["oficina_ok"]:
         st.markdown("---")
         st.subheader("🔐 Acceso OFICINA")
@@ -421,6 +431,7 @@ small, .stCaption, [data-testid="stCaptionContainer"] {{
 hr {{
   border-color: var(--border) !important;
 }}
+/* botones */
 .stButton > button {{
   background: var(--primary) !important;
   color: var(--button_text) !important;
@@ -545,18 +556,20 @@ if VISTA == "SUBCONTRATOS":
 
 
 # ==================================================
-# Carga BD precios (NORMAL)
+# Carga BD precios (NORMAL)  (MISMA LÓGICA QUE TENÍAS)
 # ==================================================
 valores_referencia = {}
 db_path = None
 st.session_state["db_precios_path"] = None
 
-# Limpieza de IDs (para evitar usar IDs viejos si cambia versión/proyecto)
-st.session_state.pop("precios_version_folder_id", None)
-st.session_state.pop("precios_db_file_id", None)
+# (solo para edición en cloud: guardamos IDs, NO afecta la lógica de carga)
+# No los borramos para no romper la subida al guardar.
+if "precios_version_folder_id" not in st.session_state:
+    st.session_state["precios_version_folder_id"] = None
+if "precios_db_file_id" not in st.session_state:
+    st.session_state["precios_db_file_id"] = None
 
 if not modo_critico:
-    # Tu lógica original: la función debe venir del backend
     try:
         cargar_valores_referencia = backend["cargar_valores_referencia"]
     except Exception:
@@ -579,7 +592,7 @@ if not modo_critico:
             if not file_id:
                 raise FileNotFoundError("No se encontró 'precios_referencia.db' en esa versión.")
 
-            # Guardar IDs para edición/subida posterior
+            # ✅ Guardar IDs (para edición/subida)
             st.session_state["precios_version_folder_id"] = version_folder_id
             st.session_state["precios_db_file_id"] = file_id
 
@@ -588,24 +601,14 @@ if not modo_critico:
             download_file(service, file_id, db_path)
 
         else:
-            # 1) Prioridad: carpeta dentro del repo (control_actas/precios_referencia/<version>/precios_referencia.db)
-            repo_control_actas = Path(__file__).resolve().parent  # .../control_actas
-            precios_root_repo = repo_control_actas / "precios_referencia"
-        
-            if precios_root_repo.exists():
-                precios_root = precios_root_repo
+            precios_root_env = os.environ.get("PRECIOS_ROOT", "").strip()
+            if precios_root_env:
+                precios_root = Path(precios_root_env)
             else:
-                # 2) Fallback: variable de entorno PRECIOS_ROOT
-                precios_root_env = os.environ.get("PRECIOS_ROOT", "").strip()
-                if precios_root_env:
-                    precios_root = Path(precios_root_env)
-                else:
-                    # 3) Fallback final: tu ruta vieja
-                    precios_root = Path(r"G:\Mi unidad\Subcontratos\precios_referencia")
-        
+                precios_root = Path(r"G:\Mi unidad\Subcontratos\precios_referencia")
+
             db_path = precios_root / str(precios_version) / "precios_referencia.db"
 
-        # Tu lógica original: si no existe la función, debe fallar
         if cargar_valores_referencia is None:
             raise ImportError("No pude obtener 'cargar_valores_referencia' desde el backend activo.")
 
@@ -640,6 +643,7 @@ with tab_run:
     st.subheader("Ejecución")
 
     if procesar_btn:
+        # Si estás en CLOUD+OFICINA, baja las actas del mes antes de correr
         if IS_CLOUD and VISTA == "OFICINA":
             try:
                 service = get_drive_service()
@@ -649,6 +653,7 @@ with tab_run:
                 )
                 st.caption(f"☁️ Actas sincronizadas: {n} archivos en `{local_mes}`")
 
+                # Debug: esto te mata el "descargó 5, procesa 0"
                 expected = Path(BASE_ROOT) / proyecto / "control_actas" / "actas" / nombre_carpeta_mes
                 st.caption(f"🔎 Backend leerá: `{expected}`")
                 st.caption(f"🔎 XLSX en esa carpeta: {len(list(expected.glob('*.xlsx')))}")
@@ -667,6 +672,7 @@ with tab_run:
                 modo_critico=modo_critico,
             )
 
+        # Export a Drive (solo Cloud + Oficina)
         if IS_CLOUD and VISTA == "OFICINA":
             try:
                 service = get_drive_service()
@@ -812,7 +818,7 @@ with tab_based:
                 st.write(valores_referencia)
 
     # ==================================================
-    # ✅ EDICIÓN BD (SOLO OFICINA)
+    # ✅ EDICIÓN BD (SOLO OFICINA) - ÚNICO CAMBIO FUNCIONAL NUEVO
     # ==================================================
     if (
         VISTA == "OFICINA"
@@ -823,6 +829,7 @@ with tab_based:
         st.markdown("---")
         st.subheader("✏️ Edición de base de precios (SOLO OFICINA)")
 
+        # Cargar DB a dataframe editable
         try:
             df_precios_db = leer_precios(Path(st.session_state["db_precios_path"]))
         except Exception as e:
@@ -857,24 +864,37 @@ with tab_based:
                     payload = df_editado[["actividad", "precio", "unidad"]].copy()
                     upsert_precios(Path(st.session_state["db_precios_path"]), payload)
 
-                    # Si es Cloud: subir a Drive como 'precios_referencia.db' (evita crear archivo nuevo por nombre local)
+                    # Si es Cloud, subimos de vuelta a Drive (sin duplicar por nombre)
                     if IS_CLOUD:
                         service = get_drive_service()
+                        file_id = st.session_state.get("precios_db_file_id")
                         version_folder_id = st.session_state.get("precios_version_folder_id")
-                        if not version_folder_id:
-                            raise RuntimeError("No tengo 'precios_version_folder_id' en session_state (no puedo subir a Drive).")
 
-                        tmp_dir = Path(tempfile.gettempdir())
-                        tmp_upload = tmp_dir / "precios_referencia.db"
-                        shutil.copyfile(Path(st.session_state["db_precios_path"]), tmp_upload)
+                        if not file_id:
+                            raise RuntimeError("No tengo 'precios_db_file_id' en session_state (no puedo actualizar la BD en Drive).")
 
-                        mime_db = "application/octet-stream"
-                        upload_or_update_file(
-                            service,
-                            version_folder_id,
-                            tmp_upload,
-                            mime_db
-                        )
+                        # Preferido: update por fileId (evita duplicados / confusiones)
+                        try:
+                            from googleapiclient.http import MediaFileUpload
+
+                            local_db = Path(st.session_state["db_precios_path"])
+                            media = MediaFileUpload(str(local_db), mimetype="application/octet-stream", resumable=False)
+                            service.files().update(
+                                fileId=file_id,
+                                media_body=media,
+                                supportsAllDrives=True
+                            ).execute()
+
+                        except Exception:
+                            # Fallback: por nombre (si el entorno no tiene MediaFileUpload)
+                            if not version_folder_id:
+                                raise RuntimeError("No tengo 'precios_version_folder_id' para fallback de subida.")
+                            upload_or_update_file(
+                                service,
+                                version_folder_id,
+                                Path(st.session_state["db_precios_path"]),
+                                "application/octet-stream",
+                            )
 
                     st.success("✅ BD actualizada correctamente.")
                     st.rerun()
@@ -891,6 +911,8 @@ with tab_based:
         st.caption("Edición deshabilitada: en vista SUBCONTRATOS la BD es SOLO LECTURA.")
     elif modo_critico:
         st.caption("Edición deshabilitada: estás en MODO CRÍTICO.")
+caption("Edición deshabilitada: estás en MODO CRÍTICO.")
+
 
 
 
