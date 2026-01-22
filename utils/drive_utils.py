@@ -58,3 +58,16 @@ def download_file(service, file_id: str, dest_path):
         while not done:
             _, done = downloader.next_chunk()
 
+def detectar_carpetas_anio(service, parent_id, fallback):
+    folders = list_folders(service, parent_id)
+    yrs = []
+    for f in folders:
+        if f["name"].isdigit():
+            yrs.append(int(f["name"]))
+    return sorted(yrs) if yrs else fallback
+
+
+def detectar_versiones_precios(service, precios_root_id, fallback):
+    folders = list_folders(service, precios_root_id)
+    return sorted([f["name"] for f in folders]) or fallback
+
