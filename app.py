@@ -74,30 +74,30 @@ def vista_selector():
     if st.session_state["vista"] is None:
         st.stop()
 
-# Gate para OFICINA
-if st.session_state["vista"] == "OFICINA" and not st.session_state["oficina_ok"]:
-    st.markdown("---")
-    st.subheader("🔐 Acceso OFICINA")
-
-    clave = st.text_input("Palabra clave", type="password")
-
-    oficina_key = st.secrets["OFICINA_KEY"] if "OFICINA_KEY" in st.secrets else None
-
-    if st.button("Validar"):
-        if oficina_key is None:
-            st.error("No se encontró OFICINA_KEY en Secrets de Streamlit Cloud.")
-            st.stop()
-
-        if (clave or "").strip() == str(oficina_key).strip():
-            st.session_state["oficina_ok"] = True
-            st.success("Acceso concedido ✅")
-            st.rerun()
-        else:
-            st.error("Clave incorrecta ❌")
-            st.stop()
-    # Si es oficina y no está ok, frenamos
+    # Gate para OFICINA
     if st.session_state["vista"] == "OFICINA" and not st.session_state["oficina_ok"]:
-        st.stop()
+        st.markdown("---")
+        st.subheader("🔐 Acceso OFICINA")
+    
+        clave = st.text_input("Palabra clave", type="password")
+    
+        oficina_key = st.secrets["OFICINA_KEY"] if "OFICINA_KEY" in st.secrets else None
+    
+        if st.button("Validar"):
+            if oficina_key is None:
+                st.error("No se encontró OFICINA_KEY en Secrets de Streamlit Cloud.")
+                st.stop()
+    
+            if (clave or "").strip() == str(oficina_key).strip():
+                st.session_state["oficina_ok"] = True
+                st.success("Acceso concedido ✅")
+                st.rerun()
+            else:
+                st.error("Clave incorrecta ❌")
+                st.stop()
+        # Si es oficina y no está ok, frenamos
+        if st.session_state["vista"] == "OFICINA" and not st.session_state["oficina_ok"]:
+            st.stop()
 
 
 def render_subcontratos_uploader():
@@ -708,6 +708,7 @@ with tab_based:
             else:
                 st.info("`ACTIVIDADES_CRITICAS` no es dict. Muestro tal cual:")
                 st.write(ACTIVIDADES_CRITICAS)
+
 
 
 
