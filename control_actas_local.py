@@ -1,10 +1,10 @@
 # control_actas_local.py
+from __future__ import annotations
 import os
 import sys
 import importlib
 from pathlib import Path
 from typing import Optional, Dict, Any
-from __future__ import annotations
 import importlib.util
 
 
@@ -129,6 +129,7 @@ def get_backend(modo: str, *, anio_proyecto: Optional[int | str] = None) -> Dict
         "PROJECTS_ROOT": str(get_projects_root()),
         "IS_CLOUD": is_cloud(),
     }
+
 
 
 
