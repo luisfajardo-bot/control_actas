@@ -104,17 +104,15 @@ def sync_actas_mes_desde_drive(service, root_id: str, base_root: Path, proyecto:
     # NOTA: root_id es tu DRIVE_ROOT_FOLDER_ID. No sabemos a qué apunta exactamente.
     # Probamos varios "árboles" típicos.
     candidates = [
-        # A) root / 2025 / Grupo 3 / control_actas / actas / octubre2025
-        [str(anio), proyecto, "control_actas", "actas", nombre_carpeta_mes],
-
-        # B) root / Subcontratos / 2025 / Grupo 3 / control_actas / actas / octubre2025
-        ["Subcontratos", str(anio), proyecto, "control_actas", "actas", nombre_carpeta_mes],
-
-        # C) root / Grupo 3 / 2025 / control_actas / actas / octubre2025  (año debajo del proyecto)
+        # 1) ROOT / Grupo 3 / control_actas / actas / octubre2025
+        [proyecto, "control_actas", "actas", nombre_carpeta_mes],
+    
+        # 2) por si tuvieras el año como carpeta intermedia:
+        # ROOT / Grupo 3 / control_actas / actas / 2025 / octubre2025
+        [proyecto, "control_actas", "actas", str(anio), nombre_carpeta_mes],
+    
+        # 3) variante (menos común): ROOT / Grupo 3 / 2025 / control_actas / actas / octubre2025
         [proyecto, str(anio), "control_actas", "actas", nombre_carpeta_mes],
-
-        # D) root / Subcontratos / Grupo 3 / 2025 / control_actas / actas / octubre2025
-        ["Subcontratos", proyecto, str(anio), "control_actas", "actas", nombre_carpeta_mes],
     ]
 
     mes_id = None
@@ -836,6 +834,7 @@ with tab_based:
             else:
                 st.info("`valores_referencia` no es dict. Muestro tal cual:")
                 st.write(valores_referencia)
+
 
 
 
