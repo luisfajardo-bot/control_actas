@@ -588,12 +588,21 @@ if not modo_critico:
             download_file(service, file_id, db_path)
 
         else:
-            precios_root_env = os.environ.get("PRECIOS_ROOT", "").strip()
-            if precios_root_env:
-                precios_root = Path(precios_root_env)
+            # 1) Prioridad: carpeta dentro del repo (control_actas/precios_referencia/<version>/precios_referencia.db)
+            repo_control_actas = Path(__file__).resolve().parent  # .../control_actas
+            precios_root_repo = repo_control_actas / "precios_referencia"
+        
+            if precios_root_repo.exists():
+                precios_root = precios_root_repo
             else:
-                precios_root = Path(r"G:\Mi unidad\Subcontratos\precios_referencia")
-
+                # 2) Fallback: variable de entorno PRECIOS_ROOT
+                precios_root_env = os.environ.get("PRECIOS_ROOT", "").strip()
+                if precios_root_env:
+                    precios_root = Path(precios_root_env)
+                else:
+                    # 3) Fallback final: tu ruta vieja
+                    precios_root = Path(r"G:\Mi unidad\Subcontratos\precios_referencia")
+        
             db_path = precios_root / str(precios_version) / "precios_referencia.db"
 
         # Tu lógica original: si no existe la función, debe fallar
@@ -882,6 +891,7 @@ with tab_based:
         st.caption("Edición deshabilitada: en vista SUBCONTRATOS la BD es SOLO LECTURA.")
     elif modo_critico:
         st.caption("Edición deshabilitada: estás en MODO CRÍTICO.")
+
 
 
 
