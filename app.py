@@ -81,9 +81,9 @@ def vista_selector():
         clave = st.text_input("Palabra clave", type="password")
     
         if "OFICINA_KEY" in st.secrets:
-            oficina_key = st.secrets["OFICINA_KEY"]
+            oficina_key = st.secrets["OFICINA_KEY "]
         else:
-            oficina_key = os.environ.get("OFICINA_KEY")
+            oficina_key = os.environ.get("OFICINA_KEY ")
     
         if st.button("Validar"):
             if (clave or "").strip() == (oficina_key or "").strip():
@@ -707,6 +707,7 @@ with tab_based:
             else:
                 st.info("`ACTIVIDADES_CRITICAS` no es dict. Muestro tal cual:")
                 st.write(ACTIVIDADES_CRITICAS)
+
 
 
 
