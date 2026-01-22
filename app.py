@@ -57,15 +57,14 @@ def vista_selector():
 
     with c1:
         st.subheader("🏢 OFICINA")
-        st.write("- Usa Drive y funciona tal cual está hoy.")
-        st.write("- Permisos: editor (requiere clave).")
+        st.write("- Uso de carpetas compartidas para evaluación de pagos realizados.")
+        st.write("- Requiere clave para entrar a modo de edición")
         if st.button("Entrar a OFICINA"):
             st.session_state["vista"] = "OFICINA"
 
     with c2:
         st.subheader("🧰 Ingenieros de Subcontratos")
         st.write("- Procesa archivos subidos (.zip / .xlsx).")
-        st.write("- BD de precios: misma de Drive (solo lectura).")
         if st.button("Entrar a Subcontratos"):
             st.session_state["vista"] = "SUBCONTRATOS"
             st.session_state["oficina_ok"] = False  # por si venían de oficina
@@ -709,6 +708,7 @@ with tab_based:
             else:
                 st.info("`ACTIVIDADES_CRITICAS` no es dict. Muestro tal cual:")
                 st.write(ACTIVIDADES_CRITICAS)
+
 
 
 
