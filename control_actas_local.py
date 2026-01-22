@@ -184,6 +184,7 @@ def get_backend(modo: str, *, anio_proyecto: Optional[int | str] = None) -> Dict
     cargar_valores_referencia = _resolver_cargar_valores_referencia(backend)
 
     return {
+        "BASE_ROOT": str(base_root),
         "BASE_ROOT": str(base_root_path),
         "BASE_ROOT_PATH": base_root_path,
 
@@ -193,6 +194,8 @@ def get_backend(modo: str, *, anio_proyecto: Optional[int | str] = None) -> Dict
 
         # Para que app.py NO tenga que importar 'control_actas' globalmente
         "cargar_valores_referencia": cargar_valores_referencia,
+    }
+
 
 
 
