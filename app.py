@@ -8,6 +8,10 @@ import streamlit as st
 import pandas as pd
 
 from control_actas_local import get_backend
+# ==================================================
+# BD precios (lectura + edición solo OFICINA)
+# ==================================================
+from control_actas.bd_precios import leer_precios, upsert_precios
 
 
 # ==================================================
@@ -582,6 +586,9 @@ if not modo_critico:
             file_id = find_file(service, version_folder_id, "precios_referencia.db")
             if not file_id:
                 raise FileNotFoundError("No se encontró 'precios_referencia.db' en esa versión.")
+            # --- Guardamos IDs para permitir actualización desde OFICINA (sin cambiar lógicas) ---
+            st.session_state["precios_version_folder_id"] = version_folder_id
+            st.session_state["precios_db_file_id"] = file_id
 
             tmp_dir = Path(tempfile.gettempdir())
             db_path = tmp_dir / f"precios_referencia_{precios_version}.db"
@@ -803,3 +810,82 @@ with tab_based:
             else:
                 st.info("`valores_referencia` no es dict. Muestro tal cual:")
                 st.write(valores_referencia)
+                    # ==================================================
+                    # ✅ EDICIÓN BD (SOLO OFICINA) - sin cambiar lógicas existentes
+                    # ==================================================
+                    if (
+                        VISTA == "OFICINA"
+                        and st.session_state.get("oficina_ok") is True
+                        and (not modo_critico)
+                        and st.session_state.get("db_precios_path")
+                    ):
+                        st.markdown("---")
+                        st.subheader("✏️ Edición de base de precios (SOLO OFICINA)")
+                
+                        # Cargar DB a dataframe editable
+                        try:
+                            df_precios_db = leer_precios(Path(st.session_state["db_precios_path"]))
+                        except Exception as e:
+                            st.error("No se pudo leer la BD para edición.")
+                            st.exception(e)
+                            df_precios_db = pd.DataFrame(columns=["actividad", "precio", "unidad", "updated_at"])
+                
+                        if df_precios_db.empty:
+                            df_precios_db = pd.DataFrame(columns=["actividad", "precio", "unidad", "updated_at"])
+                
+                        st.caption("Puedes **editar precios** y **agregar filas**. `updated_at` se actualiza al guardar.")
+                
+                        df_editado = st.data_editor(
+                            df_precios_db,
+                            num_rows="dynamic",
+                            use_container_width=True,
+                            disabled=["updated_at"],
+                            column_config={
+                                "actividad": st.column_config.TextColumn("Actividad", required=True),
+                                "precio": st.column_config.NumberColumn("Precio", required=True, format="%.2f"),
+                                "unidad": st.column_config.TextColumn("Unidad"),
+                                "updated_at": st.column_config.TextColumn("Última actualización", disabled=True),
+                            },
+                            key="editor_precios_oficina",
+                        )
+                
+                        col_g1, col_g2 = st.columns([1, 1])
+                
+                        with col_g1:
+                            if st.button("💾 Guardar cambios en BD", use_container_width=True):
+                                try:
+                                    payload = df_editado[["actividad", "precio", "unidad"]].copy()
+                                    upsert_precios(Path(st.session_state["db_precios_path"]), payload)
+                
+                                    # Si es Cloud, subimos de vuelta a Drive en la misma carpeta versión
+                                    if IS_CLOUD:
+                                        service = get_drive_service()
+                                        version_folder_id = st.session_state.get("precios_version_folder_id")
+                                        if not version_folder_id:
+                                            raise RuntimeError("No tengo 'precios_version_folder_id' en session_state (no puedo subir a Drive).")
+                
+                                        mime_db = "application/octet-stream"
+                                        upload_or_update_file(
+                                            service,
+                                            version_folder_id,
+                                            Path(st.session_state["db_precios_path"]),
+                                            mime_db
+                                        )
+                
+                                    st.success("✅ BD actualizada correctamente.")
+                                    st.rerun()
+                
+                                except Exception as e:
+                                    st.error("❌ No se pudo guardar la BD.")
+                                    st.exception(e)
+                
+                        with col_g2:
+                            if st.button("↩️ Recargar (descartar cambios locales)", use_container_width=True):
+                                st.rerun()
+                
+                    elif VISTA == "SUBCONTRATOS":
+                        st.caption("Edición deshabilitada: en vista SUBCONTRATOS la BD es SOLO LECTURA.")
+                    elif modo_critico:
+                        st.caption("Edición deshabilitada: estás en MODO CRÍTICO.")
+
+
