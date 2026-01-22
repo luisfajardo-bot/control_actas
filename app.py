@@ -20,6 +20,10 @@ root_id = st.secrets["DRIVE_ROOT_FOLDER_ID"]
 folders = list_folders(service, root_id)
 st.write([f["name"] for f in folders])
 
+import streamlit as st
+st.write(list(st.secrets.keys()))
+
+
 #HASTA AQUI
 
 def formatear_numeros_df(df: pd.DataFrame) -> pd.DataFrame:
@@ -666,6 +670,7 @@ with tab_based:
             else:
                 st.info("`ACTIVIDADES_CRITICAS` no es dict. Muestro tal cual:")
                 st.write(ACTIVIDADES_CRITICAS)
+
 
 
 
