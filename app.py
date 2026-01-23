@@ -578,6 +578,19 @@ if not modo_critico:
             service = get_drive_service()
             root_id = st.secrets["DRIVE_ROOT_FOLDER_ID"]
 
+            #debug debug
+            st.markdown("### 🧪 DEBUG Drive – estructura")
+
+            service = get_drive_service()
+            root_id = st.secrets["DRIVE_ROOT_FOLDER_ID"]
+            
+            root_folders = list_folders(service, root_id)
+            st.write("📁 Carpetas en DRIVE_ROOT_FOLDER_ID:")
+            st.write([f["name"] for f in root_folders])
+
+            #debug debug
+
+
             precios_root_id = find_child_folder(service, root_id, "precios_referencia")
             if not precios_root_id:
                 raise FileNotFoundError("No existe carpeta 'precios_referencia' en Drive.")
@@ -590,10 +603,20 @@ if not modo_critico:
             if not file_id:
                 raise FileNotFoundError("No se encontró 'precios_referencia.db' en esa versión.")
 
+            st.write("📁 Carpetas dentro de 'precios_referencia':")
+            version_folders = list_folders(service, precios_root_id)
+            st.write([f["name"] for f in version_folders])
+
+
             # Guardar IDs para edición/subida posterior
             st.session_state["precios_version_folder_id"] = version_folder_id
             st.session_state["precios_db_file_id"] = file_id
 
+            st.write(f"📁 Archivos dentro de version {precios_version}:")
+            files = list_files_in_folder(service, version_folder_id)
+            st.write([(f["name"], f["id"]) for f in files])
+
+            
             tmp_dir = Path(tempfile.gettempdir())
             db_path = tmp_dir / f"precios_referencia_{precios_version}.db"
             download_file(service, file_id, db_path)
@@ -920,6 +943,7 @@ with tab_based:
         st.caption("Edición deshabilitada: en vista SUBCONTRATOS la BD es SOLO LECTURA.")
     elif modo_critico:
         st.caption("Edición deshabilitada: estás en MODO CRÍTICO.")
+
 
 
 
