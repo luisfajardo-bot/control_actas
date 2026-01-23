@@ -146,4 +146,78 @@ def filtrar_referencias_criticas(valores_referencia: dict, actividades_criticas:
         if desc_norm in crit_norm:
             filtradas[(desc_norm, un_norm)] = precio
 
+
     return filtradas
+
+
+def cargar_valores_referencia(db_path: str | Path) -> dict:
+    """
+    Lee la BD SQLite de precios y retorna un dict:
+        { actividad: precio }
+
+    Soporta BDs viejas/nuevas:
+    - tabla 'precios' (nuevo)
+    - tabla 'precios_referencia_v4' (legacy)
+    - tabla 'precios_referencia' (legacy)
+
+    Intenta detectar columnas razonables para actividad y precio.
+    """
+    db_path = Path(db_path)
+    if not db_path.exists():
+        return {}
+
+    con = sqlite3.connect(str(db_path))
+    try:
+        tablas = [r[0] for r in con.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name;"
+        ).fetchall()]
+
+        # Orden de preferencia (la primera que exista gana)
+        candidatos = ["precios", "precios_referencia_v4", "precios_referencia"]
+        table = next((t for t in candidatos if t in tablas), None)
+        if not table:
+            return {}
+
+        cols = [r[1] for r in con.execute(f"PRAGMA table_info({table});").fetchall()]
+        cols_low = {c.lower(): c for c in cols}
+
+        # posibles nombres de columnas
+        actividad_col = None
+        precio_col = None
+
+        for k in ["actividad", "item", "descripcion", "actividad_desc", "nombre", "concepto"]:
+            if k in cols_low:
+                actividad_col = cols_low[k]
+                break
+
+        for k in ["precio", "valor", "v_unitario", "unitario", "precio_unitario", "pu"]:
+            if k in cols_low:
+                precio_col = cols_low[k]
+                break
+
+        # Caso común legacy: actividad + precio
+        if actividad_col is None and "actividad" in cols_low:
+            actividad_col = cols_low["actividad"]
+        if precio_col is None and "precio" in cols_low:
+            precio_col = cols_low["precio"]
+
+        if actividad_col is None or precio_col is None:
+            return {}
+
+        df = pd.read_sql_query(
+            f"SELECT {actividad_col} AS actividad, {precio_col} AS precio FROM {table}",
+            con,
+        )
+
+        if df.empty:
+            return {}
+
+        df["actividad"] = df["actividad"].astype(str).str.strip()
+        df["precio"] = pd.to_numeric(df["precio"], errors="coerce")
+
+        df = df[df["actividad"].notna() & (df["actividad"] != "")]
+        df = df[df["precio"].notna()]
+
+        return dict(zip(df["actividad"].tolist(), df["precio"].tolist()))
+    finally:
+        con.close()
