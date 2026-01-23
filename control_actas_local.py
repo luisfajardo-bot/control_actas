@@ -162,8 +162,8 @@ def get_backend(modo: str, *, anio_proyecto: Optional[int | str] = None) -> Dict
     base_root_path = resolver_base_root(anio_proyecto=anio_proyecto)
     base_root_path.mkdir(parents=True, exist_ok=True)
 
-    cargar_valores_referencia = _resolver_cargar_valores_referencia(backend)
-        cargar_valores_referencia = None
+    # Resolver cargar_valores_referencia desde el backend importado
+    cargar_valores_referencia = None
     try:
         bp = getattr(backend, "bd_precios", None)
         if bp is not None:
@@ -180,6 +180,8 @@ def get_backend(modo: str, *, anio_proyecto: Optional[int | str] = None) -> Dict
         "backend_module": backend,
         "cargar_valores_referencia": cargar_valores_referencia,
     }
+
+
 
 
 
