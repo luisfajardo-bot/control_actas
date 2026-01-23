@@ -1,152 +1,317 @@
-import pandas as pd
+# control_actas/bd_precios.py
+from __future__ import annotations
+
 import sqlite3
-import unicodedata
-import re
+
+
 from pathlib import Path
+from datetime import datetime
+from typing import Iterable, Optional, Tuple
+
+import pandas as pd
+
 
 # =========================
-# CONFIG (NO TOCAR)
+# Esquema
 # =========================
-INPUT_EXCEL = "Precios_referencia_v4.xlsx"
-OUTPUT_DB = "precios_referencia.db"
-TABLE_NAME = "precios_referencia"
+DDL = """
+CREATE TABLE IF NOT EXISTS precios (
+  actividad   TEXT PRIMARY KEY,
+  precio      REAL NOT NULL,
+  unidad      TEXT,
+  updated_at  TEXT
+);
+"""
+
+# (Opcional pero recomendado) historial/auditoría
+DDL_LOG = """
+CREATE TABLE IF NOT EXISTS precios_log (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  actividad   TEXT NOT NULL,
+  precio_old  REAL,
+  precio_new  REAL,
+  unidad_old  TEXT,
+  unidad_new  TEXT,
+  changed_at  TEXT NOT NULL
+);
+"""
+
 
 # =========================
-# NORMALIZACIÓN
+# Conexión
 # =========================
-def normalizar(texto):
-    if pd.isna(texto):
+def connect(db_path: str | Path) -> sqlite3.Connection:
+    """
+    Conecta y asegura tablas. Ojo: WAL puede fallar en algunos FS raros, pero suele ir bien.
+    """
+    con = sqlite3.connect(str(db_path))
+    con.execute("PRAGMA foreign_keys=ON;")
+    con.execute("PRAGMA journal_mode=WAL;")
+    con.execute("PRAGMA synchronous=NORMAL;")
+
+    con.execute(DDL)
+    con.execute(DDL_LOG)
+    return con
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# =========================
+# Lecturas
+# =========================
+def leer_precios(db_path: str | Path) -> pd.DataFrame:
+    con = connect(db_path)
+    try:
+        return pd.read_sql_query(
+            "SELECT actividad, precio, unidad, updated_at FROM precios ORDER BY actividad",
+            con,
+        )
+    finally:
+        con.close()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+def existe_actividad(db_path: str | Path, actividad: str) -> bool:
+    actividad = (actividad or "").strip()
+    if not actividad:
+        return False
+    con = connect(db_path)
+    try:
+        cur = con.execute("SELECT 1 FROM precios WHERE actividad = ? LIMIT 1", (actividad,))
+        return cur.fetchone() is not None
+    finally:
+        con.close()
+
+
+def obtener_precio(db_path: str | Path, actividad: str) -> Optional[float]:
+    actividad = (actividad or "").strip()
+    if not actividad:
         return None
-    texto = str(texto).lower()
-    texto = unicodedata.normalize("NFD", texto)
-    texto = "".join(c for c in texto if unicodedata.category(c) != "Mn")  # quita tildes
-    texto = re.sub(r"[^a-z0-9 ]", " ", texto)  # deja solo letras/números/espacios
-    texto = re.sub(r"\s+", " ", texto).strip()
-    return texto
-def normalizar_unidad(u: str | None) -> str:
-    if u is None:
-        return ""
-    s = str(u).strip().upper()
+    con = connect(db_path)
+    try:
+        cur = con.execute("SELECT precio FROM precios WHERE actividad = ? LIMIT 1", (actividad,))
+        row = cur.fetchone()
+        return float(row[0]) if row else None
+    finally:
+        con.close()
 
-    # Unificar símbolos comunes
-    s = s.replace("M³", "M3").replace("M^3", "M3").replace("M3", "M3")
-    s = s.replace("M²", "M2").replace("M^2", "M2").replace("M2", "M2")
 
-    # Quitar espacios internos raros
-    s = re.sub(r"\s+", "", s)
-
-    # Sinónimos típicos
-    mapa = {
-        "UND": "UN",
-        "UNID": "UN",
-        "UNIDAD": "UN",
-        "U": "UN",
-        "ML": "M",      # si en tus actas ML realmente significa metro lineal
-        "M.L": "M",
-    }
-    return mapa.get(s, s)
 # =========================
-# MAIN
+# Escrituras / Upserts
 # =========================
-def main():
-    excel_path = Path(INPUT_EXCEL)
-    if not excel_path.exists():
-        raise FileNotFoundError(
-            f"No se encontró el archivo de entrada: {excel_path.resolve()}"
+def _normalizar_df_precios(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Normaliza y valida:
+    - actividad: str.strip()
+    - precio: numérico
+    - unidad: opcional
+    """
+    if df is None or df.empty:
+        return pd.DataFrame(columns=["actividad", "precio", "unidad"])
+
+    df2 = df.copy()
+
+    # columnas mínimas
+    if "actividad" not in df2.columns:
+        raise ValueError("Falta columna 'actividad'")
+    if "precio" not in df2.columns:
+        raise ValueError("Falta columna 'precio'")
+
+    df2["actividad"] = df2["actividad"].astype(str).str.strip()
+
+
+    # filtrar vacíos
+    df2 = df2[df2["actividad"].notna() & (df2["actividad"] != "")]
+
+
+
+
+    # asegurar numérico
+    df2["precio"] = pd.to_numeric(df2["precio"], errors="coerce")
+    if df2["precio"].isna().any():
+        bad = df2[df2["precio"].isna()][["actividad", "precio"]].head(10)
+        raise ValueError(f"Hay precios no numéricos. Ejemplos:\n{bad}")
+
+    if "unidad" not in df2.columns:
+        df2["unidad"] = None
+    else:
+        # unidad: limpiamos strings si vienen
+        df2["unidad"] = df2["unidad"].apply(lambda x: str(x).strip() if pd.notna(x) else None)
+
+    # quitar duplicados por actividad (nos quedamos con el último)
+    df2 = df2.drop_duplicates(subset=["actividad"], keep="last")
+
+    return df2[["actividad", "precio", "unidad"]].reset_index(drop=True)
+
+
+def upsert_precios(db_path: str | Path, df: pd.DataFrame, *, log_changes: bool = True) -> None:
+    """
+    Inserta/actualiza por 'actividad' (PRIMARY KEY).
+    Espera columnas: actividad, precio (unidad opcional)
+
+    log_changes=True: guarda auditoría en precios_log con valores old/new.
+    """
+    df2 = _normalizar_df_precios(df)
+    if df2.empty:
+        return
+
+    now = datetime.now().isoformat(timespec="seconds")
+
+    con = connect(db_path)
+    try:
+        # Para logging: capturamos valores previos de las actividades que vamos a tocar
+        prev = {}
+        if log_changes:
+            acts = tuple(df2["actividad"].tolist())
+            # Evitar query inválida si no hay acts
+            if acts:
+                qmarks = ",".join(["?"] * len(acts))
+                cur = con.execute(
+                    f"SELECT actividad, precio, unidad FROM precios WHERE actividad IN ({qmarks})",
+                    acts,
+                )
+                prev = {a: (p, u) for (a, p, u) in cur.fetchall()}
+
+        # Upsert en precios
+        rows = []
+        for _, r in df2.iterrows():
+            rows.append((r["actividad"], float(r["precio"]), r["unidad"], now))
+
+        con.executemany(
+            """
+            INSERT INTO precios (actividad, precio, unidad, updated_at)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(actividad) DO UPDATE SET
+              precio=excluded.precio,
+              unidad=excluded.unidad,
+              updated_at=excluded.updated_at
+            """,
+            rows,
         )
 
-    # 1) Leer Excel
-    df = pd.read_excel(excel_path)
+        # Auditoría
+        if log_changes:
+            log_rows = []
+            for (actividad, precio_new, unidad_new, _) in rows:
+                if actividad in prev:
+                    precio_old, unidad_old = prev[actividad]
+                else:
+                    precio_old, unidad_old = (None, None)
 
-    # 2) Renombrar columnas a nombres internos estándar
-    df = df.rename(columns={
-        "DESCRIPCIÓN": "descripcion",
-        "UNIDAD": "unidad",
-        "AJUSTE PRECIOS (CD+AIU) 0G_0G_2025": "precio"
-    })
+                # Guardar solo si realmente cambió algo (o si es nuevo)
+                changed = (precio_old is None) or (float(precio_old) != float(precio_new)) or ((unidad_old or None) != (unidad_new or None))
+                if changed:
+                    log_rows.append((actividad, precio_old, precio_new, unidad_old, unidad_new, now))
 
-    # 3) Validar columnas requeridas
-    requeridas = ["descripcion", "unidad", "precio"]
-    faltantes = [c for c in requeridas if c not in df.columns]
-    if faltantes:
-        raise ValueError(
-            "Faltan columnas requeridas en el Excel: "
-            f"{faltantes}\n\nColumnas disponibles:\n{list(df.columns)}"
-        )
+            if log_rows:
+                con.executemany(
+                    """
+                    INSERT INTO precios_log (actividad, precio_old, precio_new, unidad_old, unidad_new, changed_at)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    log_rows,
+                )
 
-    # 4) Normalizar descripción
-    df["descripcion_norm"] = df["descripcion"].apply(normalizar)
+        con.commit()
+    finally:
+        con.close()
 
-    # 5) Seleccionar columnas finales
-    out = df[["descripcion", "descripcion_norm", "unidad", "precio"]].copy()
 
-    # 6) Guardar a SQLite (un solo archivo .db)
-    #    replace = borra y vuelve a crear la tabla cada vez que corras (ideal para pruebas)
-    db_path = Path(OUTPUT_DB).resolve()
-    with sqlite3.connect(db_path) as conn:
-        out.to_sql(TABLE_NAME, conn, if_exists="replace", index=False)
-
-        # 7) Verificación rápida
-        check = pd.read_sql(f"SELECT * FROM {TABLE_NAME} LIMIT 20", conn)
-
-    print(f"✅ OK. Entrada: {excel_path.resolve()}")
-    print(f"✅ OK. Salida DB: {db_path}")
-    print(f"✅ Tabla creada/reemplazada: {TABLE_NAME}")
-    print("\n🔎 Muestra (primeras 20 filas):")
-    print(check)
-
-if __name__ == "__main__":
-    main()
-    
-def cargar_valores_referencia(db_path: str | Path) -> dict:
+def actualizar_precio(db_path: str | Path, actividad: str, precio: float, unidad: Optional[str] = None) -> None:
     """
-    Retorna dict con llave (descripcion_norm, unidad_norm) -> precio_ref(float)
+    Helper para actualizar una sola actividad.
     """
-    db_path = Path(db_path)
-
-    if not db_path.exists():
-        raise FileNotFoundError(f"No se encontró la BD en: {db_path.resolve()}")
-
-    with sqlite3.connect(db_path) as conn:
-        df = pd.read_sql(
-            "SELECT descripcion_norm, unidad, precio FROM precios_referencia",
-            conn
-        )
-
-    ref = {}
-    for _, r in df.iterrows():
-        desc_norm = (r["descripcion_norm"] or "").strip()
-        un_norm = normalizar_unidad(r["unidad"])
-        try:
-            precio = float(r["precio"])
-        except Exception:
-            continue
-
-        if desc_norm and un_norm:
-            ref[(desc_norm, un_norm)] = precio
-
-    return ref
+    df = pd.DataFrame([{"actividad": actividad, "precio": precio, "unidad": unidad}])
+    upsert_precios(db_path, df, log_changes=True)
 
 
-def filtrar_referencias_criticas(valores_referencia: dict, actividades_criticas: dict) -> dict:
+def eliminar_actividad(db_path: str | Path, actividad: str, *, log_delete: bool = True) -> None:
     """
-    valores_referencia:
-        dict[(descripcion_norm, unidad_norm)] -> precio
-    actividades_criticas:
-        dict[str, any]  (llaves = nombres de actividades críticas)
+    (Opcional) Elimina una actividad. Útil si quieres permitir limpieza desde OFICINA.
+    No lo usaría si no estás seguro, pero te lo dejo listo.
+
+
     """
+    actividad = (actividad or "").strip()
+    if not actividad:
+        return
 
-    # Normalizamos las llaves del diccionario crítico
-    crit_norm = {normalizar(k) for k in actividades_criticas.keys()}
-    crit_norm.discard(None)
+    now = datetime.now().isoformat(timespec="seconds")
+    con = connect(db_path)
+    try:
+        if log_delete:
+            cur = con.execute("SELECT precio, unidad FROM precios WHERE actividad = ? LIMIT 1", (actividad,))
+            row = cur.fetchone()
+            if row:
+                precio_old, unidad_old = row
+                con.execute(
+                    """
+                    INSERT INTO precios_log (actividad, precio_old, precio_new, unidad_old, unidad_new, changed_at)
+                    VALUES (?, ?, NULL, ?, NULL, ?)
+                    """,
+                    (actividad, precio_old, unidad_old, now),
+                )
 
-    filtradas = {}
+        con.execute("DELETE FROM precios WHERE actividad = ?", (actividad,))
+        con.commit()
+    finally:
+        con.close()
 
-    for (desc_norm, un_norm), precio in valores_referencia.items():
-        if desc_norm in crit_norm:
-            filtradas[(desc_norm, un_norm)] = precio
 
-    return filtradas
+
+
+
+# =========================
+# Utilidades
+# =========================
+def validar_db(db_path: str | Path) -> Tuple[bool, str]:
+    """
+    Verifica que exista la tabla y que no esté corrupta (chequeo básico).
+    """
+    con = connect(db_path)
+    try:
+        # pragma integrity_check retorna 'ok' si todo bien
+        cur = con.execute("PRAGMA integrity_check;")
+        res = cur.fetchone()
+        if not res:
+            return False, "No se pudo ejecutar integrity_check."
+        ok = (str(res[0]).lower() == "ok")
+        return ok, str(res[0])
+    finally:
+
+
 
 
 
