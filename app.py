@@ -12,7 +12,7 @@ from control_actas_local import get_backend
 # ==================================================
 # BD precios (lectura + edición solo OFICINA)
 # ==================================================
-from control_normal.control_actas.bd_precios import leer_precios, upsert_precios
+#from control_normal.control_actas.bd_precios import leer_precios, upsert_precios
 
 
 # ==================================================
@@ -535,6 +535,16 @@ BASE_ROOT = backend["BASE_ROOT"]
 correr_todo = backend["correr_todo"]
 correr_todos_los_meses = backend.get("correr_todos_los_meses")
 listar_carpetas_mes = backend["listar_carpetas_mes"]
+# ==================================================
+# BD precios (lectura + edición solo OFICINA)
+# IMPORTANTE: se importa DESPUÉS de get_backend para que sys.path ya apunte al backend activo
+# ==================================================
+from importlib import import_module
+
+_bd = import_module("control_actas.bd_precios")
+leer_precios = _bd.leer_precios
+upsert_precios = _bd.upsert_precios
+
 
 
 # ==================================================
@@ -995,6 +1005,7 @@ with tab_based:
         st.caption("Edición deshabilitada: en vista SUBCONTRATOS la BD es SOLO LECTURA.")
     elif modo_critico:
         st.caption("Edición deshabilitada: estás en MODO CRÍTICO.")
+
 
 
 
