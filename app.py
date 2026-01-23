@@ -564,6 +564,7 @@ if not modo_critico:
     # En cloud, 'control_actas' puede NO ser un paquete global, por eso importamos del backend devuelto:
     try:
         cargar_valores_referencia = backend["cargar_valores_referencia"]
+        st.write(cargar_valores_referencia)
     except Exception:
         cargar_valores_referencia = None
 
@@ -804,3 +805,4 @@ with tab_based:
             else:
                 st.info("valores_referencia no es dict. Muestro tal cual:")
                 st.write(valores_referencia)
+
