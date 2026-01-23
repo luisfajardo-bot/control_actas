@@ -114,8 +114,8 @@ def sync_actas_mes_desde_drive(
         [proyecto, "control_actas", "actas", nombre_carpeta_mes],
 
         # Variantes por si alguien guardó el año en medio (por si acaso)
-        #[proyecto, "control_actas", "actas", str(anio), nombre_carpeta_mes],
-        #[proyecto, str(anio), "control_actas", "actas", nombre_carpeta_mes],
+        [proyecto, "control_actas", "actas", str(anio), nombre_carpeta_mes],
+        [proyecto, str(anio), "control_actas", "actas", nombre_carpeta_mes],
     ]
 
     mes_id = None
@@ -803,6 +803,8 @@ with tab_based:
             else:
                 st.info("`valores_referencia` no es dict. Muestro tal cual:")
                 st.write(valores_referencia)
+
+
 
 
 
