@@ -600,6 +600,33 @@ if not modo_critico:
         if cargar_valores_referencia is None:
             raise ImportError("No pude obtener 'cargar_valores_referencia' desde el backend activo.")
 
+        # --- DEBUG BD: confirmar si la BD descargada tiene datos ---
+        try:
+            p = Path(db_path)
+            st.caption(f"🔎 BD local: `{p}` | existe={p.exists()} | size={p.stat().st_size if p.exists() else 'NA'} bytes")
+        
+            import sqlite3
+            con = sqlite3.connect(str(p))
+            try:
+                # tablas
+                t = con.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name;").fetchall()
+                st.caption(f"📦 Tablas: {[x[0] for x in t]}")
+        
+                # conteo
+                n = con.execute("SELECT COUNT(*) FROM precios;").fetchone()[0] if any(x[0] == "precios" for x in t) else 0
+                st.caption(f"🧮 Filas en precios: {n}")
+        
+                # muestra rápida
+                if n > 0:
+                    sample = con.execute("SELECT actividad, precio, unidad, updated_at FROM precios LIMIT 5;").fetchall()
+                    st.caption(f"🧪 Sample(5): {sample}")
+            finally:
+                con.close()
+        except Exception as e:
+            st.error("DEBUG BD falló (esto ayuda a encontrar el problema real):")
+            st.exception(e)
+        # --- FIN DEBUG ---
+
         valores_referencia = cargar_valores_referencia(Path(db_path))
         st.session_state["db_precios_path"] = str(db_path)
 
@@ -882,6 +909,7 @@ with tab_based:
         st.caption("Edición deshabilitada: en vista SUBCONTRATOS la BD es SOLO LECTURA.")
     elif modo_critico:
         st.caption("Edición deshabilitada: estás en MODO CRÍTICO.")
+
 
 
 
