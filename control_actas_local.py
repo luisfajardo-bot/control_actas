@@ -60,10 +60,10 @@ def _set_backend_path(modo: str) -> str:
     return backend_root_str
 
 
-def _purge_control_actas_modules():
+def _purge_control_actas_modules() -> None:
     """
     Limpia módulos cargados de 'control_actas' y submódulos.
-    Esto evita choques cuando cambias entre backends (normal/critico) en caliente.
+    Evita choques cuando cambias entre backends (normal/critico) en caliente.
     """
     to_delete = [k for k in list(sys.modules.keys()) if k == "control_actas" or k.startswith("control_actas.")]
     for k in to_delete:
@@ -83,8 +83,6 @@ def _import_backend(modo: str):
         return _BACKEND_CACHE[modo]
 
     _set_backend_path(modo)
-
-    # Import “fresco” para evitar mezclas de módulos entre modos
     _purge_control_actas_modules()
 
     m = importlib.import_module("control_actas")
@@ -108,7 +106,7 @@ def _fallback_cargar_valores_referencia(backend_pkg: Any) -> Callable[[Path], di
     Devuelve una función compatible con app.py:
       cargar_valores_referencia(Path(db)) -> dict {actividad: precio}
 
-    Si el backend tiene bd_precios.leer_precios(), lo usa.
+    Si existe bd_precios.leer_precios() en el backend, se usa.
     Si no, cae a lectura directa con sqlite.
     """
     bp = None
@@ -120,16 +118,17 @@ def _fallback_cargar_valores_referencia(backend_pkg: Any) -> Callable[[Path], di
     def _cvr(db_path_local: Path) -> dict:
         if not db_path_local:
             return {}
+
         db_path_local = Path(db_path_local)
 
-        # Si el backend trae leer_precios, úsalo
+        # 1) Preferido: leer_precios del backend
         if bp is not None and hasattr(bp, "leer_precios"):
             try:
                 dfp = bp.leer_precios(db_path_local)  # type: ignore[attr-defined]
             except Exception:
                 return {}
         else:
-            # Último fallback: leer directo con sqlite
+            # 2) Fallback final: SQL directo
             try:
                 import sqlite3
                 import pandas as pd
@@ -171,10 +170,10 @@ def get_backend(modo: str, *, anio_proyecto: Optional[int | str] = None) -> Dict
         raise ValueError(f"modo inválido: {modo}. Usa 'normal' o 'critico'.")
 
     backend = _import_backend(modo)
+
     base_root_path = resolver_base_root(anio_proyecto=anio_proyecto)
     base_root_path.mkdir(parents=True, exist_ok=True)
 
-    # Exponer función de BD precios desde el backend importado si existe
     cargar_valores_referencia = None
     try:
         if hasattr(backend, "bd_precios") and hasattr(backend.bd_precios, "cargar_valores_referencia"):
@@ -182,7 +181,6 @@ def get_backend(modo: str, *, anio_proyecto: Optional[int | str] = None) -> Dict
     except Exception:
         cargar_valores_referencia = None
 
-    # Fallback: siempre devolver una función válida
     if cargar_valores_referencia is None:
         cargar_valores_referencia = _fallback_cargar_valores_referencia(backend)
 
@@ -196,6 +194,7 @@ def get_backend(modo: str, *, anio_proyecto: Optional[int | str] = None) -> Dict
 
         "cargar_valores_referencia": cargar_valores_referencia,
     }
+
 
 
 
