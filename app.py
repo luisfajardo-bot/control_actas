@@ -9,10 +9,6 @@ import pandas as pd
 
 from control_actas_local import get_backend
 
-# ==================================================
-# BD precios (lectura + edición solo OFICINA)
-# ==================================================
-from control_actas.bd_precios import leer_precios, upsert_precios
 
 
 # ==================================================
@@ -93,7 +89,7 @@ def sync_actas_mes_desde_drive(
       base_root / proyecto / control_actas / actas / nombre_carpeta_mes
     - Por eso descargamos EXACTO ahí (SIN meter /anio/ en local).
     """
-
+    # Estructura objetivo local (la que tu backend espera)
     local_mes = base_root / proyecto / "control_actas" / "actas" / nombre_carpeta_mes
     local_mes.mkdir(parents=True, exist_ok=True)
 
@@ -113,11 +109,12 @@ def sync_actas_mes_desde_drive(
             cur = nxt
         return cur
 
-
+    # Tu ROOT YA contiene: Grupo 3, Grupo 4, precios_referencia, etc.
     candidates = [
-
+        # ROOT / Grupo 3 / control_actas / actas / octubre2025
         [proyecto, "control_actas", "actas", nombre_carpeta_mes],
 
+        # Variantes por si alguien guardó el año en medio (por si acaso)
         [proyecto, "control_actas", "actas", str(anio), nombre_carpeta_mes],
         [proyecto, str(anio), "control_actas", "actas", nombre_carpeta_mes],
     ]
@@ -140,7 +137,7 @@ def sync_actas_mes_desde_drive(
             + "\n- ".join(root_folders[:80])
         )
 
-
+    # Listar archivos del mes y descargar xlsx
     items = list_files_in_folder(service, mes_id)
 
     descargados = 0
@@ -173,20 +170,20 @@ def exportar_resultados_a_drive(service, root_id: str, proyecto: str, nombre_car
 
     mime_xlsx = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
-
+    # Salidas del mes
     for p in Path(info["carpeta_salida_mes"]).glob("*.xlsx"):
         upload_or_update_file(service, salidas_mes_id, p, mime_xlsx)
 
-
+    # Resumen del mes
     for p in Path(info["carpeta_resumen_mes"]).glob("*.xlsx"):
         upload_or_update_file(service, resumen_mes_id, p, mime_xlsx)
 
-
+    # Base general
     base_general = Path(info["carpeta_datos"]) / "base_general.xlsx"
     if base_general.exists():
         upload_or_update_file(service, datos_id, base_general, mime_xlsx)
 
-
+    # Resumen global
     resumen_global = Path(info["carpeta_resumen"]) / "resumen_global.xlsx"
     if resumen_global.exists():
         upload_or_update_file(service, resumen_id, resumen_global, mime_xlsx)
@@ -210,7 +207,7 @@ def _init_state():
     if "oficina_ok" not in st.session_state:
         st.session_state["oficina_ok"] = False
     if "local_inputs_dir" not in st.session_state:
-        st.session_state["local_inputs_dir"] = None
+        st.session_state["local_inputs_dir"] = None  # Path str
     if "local_inputs_label" not in st.session_state:
         st.session_state["local_inputs_label"] = None
 
@@ -252,7 +249,7 @@ def vista_selector():
     if st.session_state["vista"] is None:
         st.stop()
 
-
+    # Gate para OFICINA
     if st.session_state["vista"] == "OFICINA" and not st.session_state["oficina_ok"]:
         st.markdown("---")
         st.subheader("🔐 Acceso OFICINA")
@@ -294,8 +291,8 @@ def render_subcontratos_uploader():
 
     if up is None:
         if st.session_state.get("local_inputs_dir"):
-            st.success(f"Carga activa: `{st.session_state['local_inputs_label']}`")
-            st.caption(f"Ruta temporal: `{st.session_state['local_inputs_dir']}`")
+            st.success(f"Carga activa: {st.session_state['local_inputs_label']}")
+            st.caption(f"Ruta temporal: {st.session_state['local_inputs_dir']}")
         return
 
     _reset_local_inputs()
@@ -317,7 +314,7 @@ def render_subcontratos_uploader():
         st.session_state["local_inputs_dir"] = str(extract_dir)
         st.session_state["local_inputs_label"] = target_label
         st.success("ZIP cargado y extraído ✅")
-        st.caption(f"Archivos extraídos en: `{extract_dir}`")
+        st.caption(f"Archivos extraídos en: {extract_dir}")
 
     elif name.endswith(".xlsx"):
         xlsx_dir = tmp_dir / "xlsx"
@@ -328,7 +325,7 @@ def render_subcontratos_uploader():
         st.session_state["local_inputs_dir"] = str(xlsx_dir)
         st.session_state["local_inputs_label"] = target_label
         st.success("XLSX cargado ✅")
-        st.caption(f"Archivo guardado en: `{xlsx_path}`")
+        st.caption(f"Archivo guardado en: {xlsx_path}")
 
 
 # ==================================================
@@ -431,7 +428,7 @@ small, .stCaption, [data-testid="stCaptionContainer"] {{
 hr {{
   border-color: var(--border) !important;
 }}
-
+/* botones */
 .stButton > button {{
   background: var(--primary) !important;
   color: var(--button_text) !important;
@@ -484,7 +481,7 @@ MESES = [
 # Sidebar filtros
 # ==================================================
 st.sidebar.title("Filtros")
-st.sidebar.markdown(f"**Vista activa:** `{VISTA}`")
+st.sidebar.markdown(f"**Vista activa:** {VISTA}")
 st.sidebar.markdown("---")
 
 if st.sidebar.button("↩ Cambiar vista"):
@@ -546,13 +543,13 @@ st.caption("Revisión automática de valores unitarios de cada actividad por pro
 st.markdown(
     f"### Proyecto seleccionado: **{proyecto}**  \n"
     f"Periodo: **{mes.capitalize()} {anio_proyecto}**  \n"
-    f"Carpeta: `{nombre_carpeta_mes}`  \n"
+    f"Carpeta: {nombre_carpeta_mes}  \n"
     f"Base de precios: **{precios_version}**"
 )
 
 if VISTA == "SUBCONTRATOS":
     render_subcontratos_uploader()
-    st.info("🧩 Nota: la carga ya queda lista en `st.session_state['local_inputs_dir']`.")
+    st.info("🧩 Nota: la carga ya queda lista en st.session_state['local_inputs_dir'].")
 
 
 # ==================================================
@@ -562,13 +559,9 @@ valores_referencia = {}
 db_path = None
 st.session_state["db_precios_path"] = None
 
-# Limpieza de IDs (para evitar usar IDs viejos si cambia versión/proyecto)
-st.session_state.pop("precios_version_folder_id", None)
-st.session_state.pop("precios_db_file_id", None)
-
 if not modo_critico:
-    # Tu lógica original: la función debe venir del backend
-
+    # Importa desde el backend ACTIVO (normal/crítico) usando import relativo ya resuelto por get_backend.
+    # En cloud, 'control_actas' puede NO ser un paquete global, por eso importamos del backend devuelto:
     try:
         cargar_valores_referencia = backend["cargar_valores_referencia"]
     except Exception:
@@ -591,10 +584,6 @@ if not modo_critico:
             if not file_id:
                 raise FileNotFoundError("No se encontró 'precios_referencia.db' en esa versión.")
 
-            # Guardar IDs para edición/subida posterior
-            st.session_state["precios_version_folder_id"] = version_folder_id
-            st.session_state["precios_db_file_id"] = file_id
-
             tmp_dir = Path(tempfile.gettempdir())
             db_path = tmp_dir / f"precios_referencia_{precios_version}.db"
             download_file(service, file_id, db_path)
@@ -608,7 +597,6 @@ if not modo_critico:
 
             db_path = precios_root / str(precios_version) / "precios_referencia.db"
 
-        # Tu lógica original: si no existe la función, debe fallar
         if cargar_valores_referencia is None:
             raise ImportError("No pude obtener 'cargar_valores_referencia' desde el backend activo.")
 
@@ -643,7 +631,7 @@ with tab_run:
     st.subheader("Ejecución")
 
     if procesar_btn:
-
+        # Si estás en CLOUD+OFICINA, baja las actas del mes antes de correr
         if IS_CLOUD and VISTA == "OFICINA":
             try:
                 service = get_drive_service()
@@ -651,11 +639,11 @@ with tab_run:
                 local_mes, n = sync_actas_mes_desde_drive(
                     service, root_id, Path(BASE_ROOT), proyecto, nombre_carpeta_mes, anio_proyecto
                 )
-                st.caption(f"☁️ Actas sincronizadas: {n} archivos en `{local_mes}`")
+                st.caption(f"☁️ Actas sincronizadas: {n} archivos en {local_mes}")
 
-
+                # Debug: esto te mata el "descargó 5, procesa 0"
                 expected = Path(BASE_ROOT) / proyecto / "control_actas" / "actas" / nombre_carpeta_mes
-                st.caption(f"🔎 Backend leerá: `{expected}`")
+                st.caption(f"🔎 Backend leerá: {expected}")
                 st.caption(f"🔎 XLSX en esa carpeta: {len(list(expected.glob('*.xlsx')))}")
 
             except Exception as e:
@@ -672,7 +660,7 @@ with tab_run:
                 modo_critico=modo_critico,
             )
 
-
+        # Export a Drive (solo Cloud + Oficina)
         if IS_CLOUD and VISTA == "OFICINA":
             try:
                 service = get_drive_service()
@@ -697,7 +685,7 @@ with tab_run:
         col1, col2, col3 = st.columns(3)
         col1.metric("Actas encontradas", n_entrada)
         col2.metric("Actas procesadas", n_salida)
-        col3.write(f"Datos guardados en:\n`{carpeta_datos}`")
+        col3.write(f"Datos guardados en:\n{carpeta_datos}")
 
         with st.expander("Ver rutas generadas"):
             st.json(info)
@@ -798,105 +786,26 @@ with tab_based:
     else:
         carpeta = os.path.basename(os.path.dirname(ruta_bd))
         archivo = os.path.basename(ruta_bd)
-        st.markdown(f"**Archivo activo:** `{carpeta}/{archivo}`")
+        st.markdown(f"**Archivo activo:** {carpeta}/{archivo}")
         if VISTA == "SUBCONTRATOS":
             st.caption("Modo Subcontratos: esta BD se usa como SOLO LECTURA.")
         else:
             st.caption("Modo Oficina: BD accesible según permisos del entorno (Drive).")
 
     if modo_backend == "normal":
-        st.caption("Esto muestra EXACTAMENTE lo que estás usando en modo NORMAL: `valores_referencia`.")
+        st.caption("Esto muestra EXACTAMENTE lo que estás usando en modo NORMAL: valores_referencia.")
         if not valores_referencia:
-            st.warning("`valores_referencia` está vacío.")
+            st.warning("valores_referencia está vacío.")
         else:
             if isinstance(valores_referencia, dict):
                 df_bn = pd.DataFrame([{"actividad": k, "precio": v} for k, v in valores_referencia.items()])
                 st.dataframe(formatear_numeros_df(df_bn), use_container_width=True, hide_index=True)
                 st.caption(f"Registros: {len(df_bn)}")
             else:
-                st.info("`valores_referencia` no es dict. Muestro tal cual:")
+                st.info("valores_referencia no es dict. Muestro tal cual:")
                 st.write(valores_referencia)
 
-    # ==================================================
-    # ✅ EDICIÓN BD (SOLO OFICINA)
-    # ==================================================
-    if (
-        VISTA == "OFICINA"
-        and st.session_state.get("oficina_ok") is True
-        and (not modo_critico)
-        and st.session_state.get("db_precios_path")
-    ):
-        st.markdown("---")
-        st.subheader("✏️ Edición de base de precios (SOLO OFICINA)")
 
-        try:
-            df_precios_db = leer_precios(Path(st.session_state["db_precios_path"]))
-        except Exception as e:
-            st.error("No se pudo leer la BD para edición.")
-            st.exception(e)
-            df_precios_db = pd.DataFrame(columns=["actividad", "precio", "unidad", "updated_at"])
-
-        if df_precios_db is None or df_precios_db.empty:
-            df_precios_db = pd.DataFrame(columns=["actividad", "precio", "unidad", "updated_at"])
-
-        st.caption("Puedes **editar precios** y **agregar filas**. `updated_at` se actualiza al guardar.")
-
-        df_editado = st.data_editor(
-            df_precios_db,
-            num_rows="dynamic",
-            use_container_width=True,
-            disabled=["updated_at"],
-            column_config={
-                "actividad": st.column_config.TextColumn("Actividad", required=True),
-                "precio": st.column_config.NumberColumn("Precio", required=True, format="%.2f"),
-                "unidad": st.column_config.TextColumn("Unidad"),
-                "updated_at": st.column_config.TextColumn("Última actualización", disabled=True),
-            },
-            key="editor_precios_oficina",
-        )
-
-        col_g1, col_g2 = st.columns([1, 1])
-
-        with col_g1:
-            if st.button("💾 Guardar cambios en BD", use_container_width=True):
-                try:
-                    payload = df_editado[["actividad", "precio", "unidad"]].copy()
-                    upsert_precios(Path(st.session_state["db_precios_path"]), payload)
-
-                    # Si es Cloud: subir a Drive como 'precios_referencia.db' (evita crear archivo nuevo por nombre local)
-                    if IS_CLOUD:
-                        service = get_drive_service()
-                        version_folder_id = st.session_state.get("precios_version_folder_id")
-                        if not version_folder_id:
-                            raise RuntimeError("No tengo 'precios_version_folder_id' en session_state (no puedo subir a Drive).")
-
-                        tmp_dir = Path(tempfile.gettempdir())
-                        tmp_upload = tmp_dir / "precios_referencia.db"
-                        shutil.copyfile(Path(st.session_state["db_precios_path"]), tmp_upload)
-
-                        mime_db = "application/octet-stream"
-                        upload_or_update_file(
-                            service,
-                            version_folder_id,
-                            tmp_upload,
-                            mime_db
-                        )
-
-                    st.success("✅ BD actualizada correctamente.")
-                    st.rerun()
-
-                except Exception as e:
-                    st.error("❌ No se pudo guardar la BD.")
-                    st.exception(e)
-
-        with col_g2:
-            if st.button("↩️ Recargar (descartar cambios locales)", use_container_width=True):
-                st.rerun()
-
-    elif VISTA == "SUBCONTRATOS":
-        st.caption("Edición deshabilitada: en vista SUBCONTRATOS la BD es SOLO LECTURA.")
-    elif modo_critico:
-        st.caption("Edición deshabilitada: estás en MODO CRÍTICO.")
 
 
 
