@@ -163,19 +163,24 @@ def get_backend(modo: str, *, anio_proyecto: Optional[int | str] = None) -> Dict
     base_root_path.mkdir(parents=True, exist_ok=True)
 
     cargar_valores_referencia = _resolver_cargar_valores_referencia(backend)
+        cargar_valores_referencia = None
+    try:
+        bp = getattr(backend, "bd_precios", None)
+        if bp is not None:
+            cargar_valores_referencia = getattr(bp, "cargar_valores_referencia", None)
+    except Exception:
+        cargar_valores_referencia = None
 
     return {
         "BASE_ROOT": str(base_root_path),
         "BASE_ROOT_PATH": base_root_path,
-
         "correr_todo": backend.correr_todo,
         "correr_todos_los_meses": getattr(backend, "correr_todos_los_meses", None),
         "listar_carpetas_mes": backend.listar_carpetas_mes,
-
-        # Para que app.py NO tenga que importar nada “por fuera” del backend activo
+        "backend_module": backend,
         "cargar_valores_referencia": cargar_valores_referencia,
-        "backend_module": backend,  # opcional: útil si quieres acceder a bd_precios, etc.
     }
+
 
 
 
