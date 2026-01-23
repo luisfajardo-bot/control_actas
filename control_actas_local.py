@@ -4,200 +4,156 @@ from __future__ import annotations
 import os
 import sys
 import tempfile
-import sqlite3
-import importlib.util
 import importlib
 from pathlib import Path
 from typing import Optional, Dict, Any, Callable
+
 
 _BACKEND_CACHE: dict[str, Any] = {}  # {"normal": module, "critico": module}
 
 
 def is_cloud() -> bool:
+    """
+    Detecta Streamlit Cloud:
+    - Preferimos st.secrets (porque ahí suele estar DRIVE_ROOT_FOLDER_ID)
+    - Fallback a env vars típicas de Streamlit
+    """
     try:
         import streamlit as st
         return "DRIVE_ROOT_FOLDER_ID" in st.secrets
     except Exception:
         pass
+
     return any(k in os.environ for k in ("STREAMLIT_RUNTIME", "STREAMLIT_SERVER_HEADLESS"))
 
 
-def _backend_pkg_dir_for(modo: str) -> Path:
+def _backend_root_for(modo: str) -> Path:
     """
-    Carpeta que contiene el package 'control_actas' del backend:
-      control_normal/control_actas
-      control_critico/control_actas
+    Retorna la carpeta que debe ir en sys.path para que exista el paquete 'control_actas'.
+    Estructura esperada (tu repo):
+      control_normal/control_actas/...
+      control_critico/control_actas/...
     """
     root = Path(__file__).resolve().parent
-    base = root / ("control_critico" if modo == "critico" else "control_normal")
-    return base / "control_actas"
+    folder = "control_critico" if modo == "critico" else "control_normal"
+    return root / folder
+
+
+def _ensure_sys_path(modo: str) -> Path:
+    """
+    Asegura que sys.path priorice el backend_root del modo,
+    y saque del frente el backend_root del otro modo.
+    """
+    backend_root = _backend_root_for(modo)
+    backend_root_str = str(backend_root)
+
+    other_root = _backend_root_for("critico" if modo == "normal" else "normal")
+    other_root_str = str(other_root)
+
+    # Quitar el otro si está antes (o en cualquier parte)
+    sys.path = [p for p in sys.path if p != other_root_str]
+
+    # Poner este al inicio
+    if backend_root_str in sys.path:
+        sys.path.remove(backend_root_str)
+    sys.path.insert(0, backend_root_str)
+
+    return backend_root
+
+
+def _loaded_control_actas_path() -> Optional[Path]:
+    """
+    Si ya está importado 'control_actas', devuelve el path real del módulo.
+    """
+    mod = sys.modules.get("control_actas")
+    if not mod:
+        return None
+    f = getattr(mod, "__file__", None)
+    if not f:
+        return None
+    try:
+        return Path(f).resolve()
+    except Exception:
+        return None
+
+
+def _purge_control_actas_modules():
+    """
+    Borra 'control_actas' y submódulos de sys.modules.
+    IMPORTANTE: solo se usa cuando detectamos que está cargado desde el backend equivocado.
+    """
+    keys = [k for k in list(sys.modules.keys()) if k == "control_actas" or k.startswith("control_actas.")]
+    for k in keys:
+        try:
+            del sys.modules[k]
+        except Exception:
+            pass
+    importlib.invalidate_caches()
 
 
 def _import_backend(modo: str):
     """
-    Importa el package del backend como paquete aislado (nombre único),
-    sin sys.path y sin purgas globales.
+    Importa el paquete 'control_actas' apuntando al backend correcto (normal/crítico),
+    sin inventar nombres.
     """
     if modo in _BACKEND_CACHE:
         return _BACKEND_CACHE[modo]
 
-    pkg_dir = _backend_pkg_dir_for(modo)
-    init_py = pkg_dir / "__init__.py"
-    if not init_py.exists():
-        raise FileNotFoundError(f"No existe __init__.py del backend en: {init_py}")
+    backend_root = _ensure_sys_path(modo)
+    importlib.invalidate_caches()
 
-    module_name = f"control_actas__{modo}"
+    # Si ya está cargado 'control_actas' pero viene del backend equivocado, lo limpiamos.
+    loaded_path = _loaded_control_actas_path()
+    if loaded_path is not None:
+        # Queremos que el __file__ esté dentro de backend_root/control_actas/...
+        # Ej: .../control_normal/control_actas/__init__.py
+        if backend_root not in loaded_path.parents:
+            _purge_control_actas_modules()
 
-    spec = importlib.util.spec_from_file_location(
-        module_name,
-        str(init_py),
-        submodule_search_locations=[str(pkg_dir)],
-    )
-    if spec is None or spec.loader is None:
-        raise ImportError(f"No pude crear spec para backend '{modo}' desde: {init_py}")
-
-    mod = importlib.util.module_from_spec(spec)
-
-    # CLAVE: registrar el paquete antes de ejecutarlo para que funcionen imports relativos
-    sys.modules[module_name] = mod
-
-    try:
-        spec.loader.exec_module(mod)  # type: ignore[attr-defined]
-    except Exception:
-        sys.modules.pop(module_name, None)
-        raise
-
-    _BACKEND_CACHE[modo] = mod
-    return mod
+    m = importlib.import_module("control_actas")
+    _BACKEND_CACHE[modo] = m
+    return m
 
 
 def resolver_base_root(*, anio_proyecto: Optional[int | str] = None) -> Path:
+    """
+    Base root del filesystem donde el backend lee/escribe.
+    - Cloud: /tmp/control_actas_data (temporal)
+    - Local: tu ruta real (ajústala si lo necesitas)
+    """
     if is_cloud():
         return Path(tempfile.gettempdir()) / "control_actas_data"
     return Path(r"G:\Mi unidad\Subcontratos")
 
 
-def _fallback_cargar_valores_referencia(db_path_local: Path) -> dict:
+def _resolver_cargar_valores_referencia(backend_module: Any) -> Optional[Callable[[Path], dict]]:
     """
-    Fallback ultra robusto:
-    - Intenta leer desde varias tablas posibles
-    - Devuelve dict {actividad: precio}
+    Intenta obtener cargar_valores_referencia desde el backend importado.
+    Si no existe, devuelve None (app.py decide qué hacer).
     """
-    p = Path(db_path_local)
-    if not p.exists():
-        return {}
-
-    con = sqlite3.connect(str(p))
+    # 1) Ideal: control_actas.bd_precios.cargar_valores_referencia
     try:
-        tablas = [r[0] for r in con.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name;"
-        ).fetchall()]
-
-        # Orden de preferencia
-        candidatas = [
-            "precios",                # tu tabla editable
-            "precios_referencia",     # tu tabla vieja
-            "precios_referencia_v4",  # tu tabla nueva
-        ]
-
-        tabla = next((t for t in candidatas if t in tablas), None)
-        if not tabla:
-            return {}
-
-        # columnas disponibles
-        cols = [r[1] for r in con.execute(f"PRAGMA table_info({tabla});").fetchall()]
-
-        # nombres típicos
-        col_act = None
-        for c in ("actividad", "ACTIVIDAD", "item", "ITEM", "codigo", "CODIGO", "nombre", "NOMBRE"):
-            if c in cols:
-                col_act = c
-                break
-
-        col_prec = None
-        for c in ("precio", "PRECIO", "valor", "VALOR", "unitario", "UNITARIO", "pu", "PU"):
-            if c in cols:
-                col_prec = c
-                break
-
-        if not col_act or not col_prec:
-            return {}
-
-        rows = con.execute(
-            f"SELECT {col_act}, {col_prec} FROM {tabla} WHERE {col_act} IS NOT NULL;"
-        ).fetchall()
-
-        out: dict[str, float] = {}
-        for a, v in rows:
-            if a is None:
-                continue
-            a2 = str(a).strip()
-            if not a2:
-                continue
-            try:
-                out[a2] = float(v)
-            except Exception:
-                # ignora valores no numéricos
-                continue
-
-        return out
-    finally:
-        con.close()
-
-
-def _resolver_cargar_valores_referencia(backend_pkg) -> Callable[[Path], dict]:
-    """
-    1) Intenta obtener backend.bd_precios.cargar_valores_referencia (si existe)
-    2) Si no existe, intenta importar submódulo bd_precios del paquete aislado
-    3) Si aún no existe, usa fallback directo a SQLite
-    """
-    # (1) Si el __init__ ya expone bd_precios
-    try:
-        bd = getattr(backend_pkg, "bd_precios", None)
-        if bd is not None:
-            fn = getattr(bd, "cargar_valores_referencia", None)
-            if callable(fn):
-                return fn  # type: ignore[return-value]
+        bp = getattr(backend_module, "bd_precios", None)
+        if bp is not None and hasattr(bp, "cargar_valores_referencia"):
+            return bp.cargar_valores_referencia  # type: ignore[attr-defined]
     except Exception:
         pass
 
-    # (2) Importar submódulo explícitamente dentro del paquete aislado
+    # 2) Import directo desde el paquete activo (ya apuntado por sys.path)
     try:
-        modname = backend_pkg.__name__  # control_actas__normal / control_actas__critico
-        bd2 = importlib.import_module(f"{modname}.bd_precios")
-        fn2 = getattr(bd2, "cargar_valores_referencia", None)
-        if callable(fn2):
-            return fn2  # type: ignore[return-value]
-
-        # si no existe esa fn pero sí existe leer_precios, podríamos construir dict desde DF
-        leer = getattr(bd2, "leer_precios", None)
-        if callable(leer):
-            def _from_leer(db_path_local: Path) -> dict:
-                df = leer(db_path_local)
-                if df is None or getattr(df, "empty", True):
-                    return {}
-                # espera columnas: actividad, precio
-                if "actividad" not in df.columns or "precio" not in df.columns:
-                    return _fallback_cargar_valores_referencia(db_path_local)
-                out = {}
-                for _, r in df.iterrows():
-                    a = str(r["actividad"]).strip()
-                    if not a:
-                        continue
-                    try:
-                        out[a] = float(r["precio"])
-                    except Exception:
-                        continue
-                return out
-            return _from_leer
+        from control_actas.bd_precios import cargar_valores_referencia as _cvr  # type: ignore
+        return _cvr
     except Exception:
-        pass
-
-    # (3) fallback final
-    return _fallback_cargar_valores_referencia
+        return None
 
 
 def get_backend(modo: str, *, anio_proyecto: Optional[int | str] = None) -> Dict[str, Any]:
+    """
+    Retorna un dict con métodos/constantes que usa el front.
+    IMPORTANTE:
+    - El paquete siempre se importa como 'control_actas'
+    - El modo solo cambia la carpeta que se pone en sys.path (control_normal vs control_critico)
+    """
     if modo not in ("normal", "critico"):
         raise ValueError(f"modo inválido: {modo}. Usa 'normal' o 'critico'.")
 
@@ -212,16 +168,16 @@ def get_backend(modo: str, *, anio_proyecto: Optional[int | str] = None) -> Dict
         "BASE_ROOT": str(base_root_path),
         "BASE_ROOT_PATH": base_root_path,
 
-        "correr_todo": getattr(backend, "correr_todo"),
+        "correr_todo": backend.correr_todo,
         "correr_todos_los_meses": getattr(backend, "correr_todos_los_meses", None),
-        "listar_carpetas_mes": getattr(backend, "listar_carpetas_mes"),
+        "listar_carpetas_mes": backend.listar_carpetas_mes,
 
-        # ✅ SIEMPRE disponible (ya no te va a reventar app.py)
+        # Para que app.py NO tenga que importar nada “por fuera” del backend activo
         "cargar_valores_referencia": cargar_valores_referencia,
-
-        # opcional para debug
-        "backend_module": backend,
+        "backend_module": backend,  # opcional: útil si quieres acceder a bd_precios, etc.
     }
+
+
 
 
 
