@@ -12,7 +12,7 @@ from control_actas_local import get_backend
 # ==================================================
 # BD precios (lectura + edición solo OFICINA)
 # ==================================================
-from control_actas.bd_precios import leer_precios, upsert_precios
+from control_normal.control_actas.bd_precios import leer_precios, upsert_precios
 
 
 # ==================================================
@@ -882,6 +882,7 @@ with tab_based:
         st.caption("Edición deshabilitada: en vista SUBCONTRATOS la BD es SOLO LECTURA.")
     elif modo_critico:
         st.caption("Edición deshabilitada: estás en MODO CRÍTICO.")
+
 
 
 
