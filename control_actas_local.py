@@ -71,19 +71,22 @@ def _purge_control_actas_modules():
 def _import_backend(modo: str):
     """
     Importa el package 'control_actas' desde la ruta del backend correspondiente.
-    Cachea por modo.
+    Cachea por modo, pero SIEMPRE asegura sys.path correcto antes de retornar.
     """
+    # ✅ siempre fijar sys.path para el modo solicitado
+    _set_backend_path(modo)
+
+    # Si ya está cacheado, devolvemos pero con path ya correcto
     if modo in _BACKEND_CACHE:
         return _BACKEND_CACHE[modo]
 
-    _set_backend_path(modo)
-
-    # Import “fresco” para evitar KeyError / mezclas de módulos entre modos
+    # Import “fresco” para evitar mezclas entre modos
     _purge_control_actas_modules()
 
     m = importlib.import_module("control_actas")
     _BACKEND_CACHE[modo] = m
     return m
+
 
 
 def resolver_base_root(*, anio_proyecto: Optional[int | str] = None) -> Path:
@@ -132,6 +135,7 @@ def get_backend(modo: str, *, anio_proyecto: Optional[int | str] = None) -> Dict
         # Para que app.py NO tenga que importar 'control_actas' globalmente
         "cargar_valores_referencia": cargar_valores_referencia,
     }
+
 
 
 
