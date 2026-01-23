@@ -621,6 +621,18 @@ if not modo_critico:
             db_path = tmp_dir / f"precios_referencia_{precios_version}.db"
             download_file(service, file_id, db_path)
 
+            # =========================
+            # 🧪 DEBUG 3: confirmar archivo local descargado
+            # =========================
+            st.markdown("### 🧪 DEBUG BD local (3)")
+            p = Path(db_path)
+            st.write({
+                "db_path": str(p),
+                "exists": p.exists(),
+                "size_bytes": p.stat().st_size if p.exists() else None,
+            })
+
+
         else:
             precios_root_env = os.environ.get("PRECIOS_ROOT", "").strip()
             if precios_root_env:
@@ -661,7 +673,47 @@ if not modo_critico:
             st.exception(e)
         # --- FIN DEBUG ---
 
+
+        import sqlite3
+
+        st.markdown("### 🧪 DEBUG contenido BD")
+        
+        con = sqlite3.connect(str(db_path))
+        try:
+            tablas = con.execute(
+                "SELECT name FROM sqlite_master WHERE type='table';"
+            ).fetchall()
+            st.write("📦 Tablas:", tablas)
+        
+            if ("precios",) in tablas:
+                n = con.execute("SELECT COUNT(*) FROM precios;").fetchone()[0]
+                st.write("🧮 Filas en precios:", n)
+        
+                sample = con.execute(
+                    "SELECT actividad, precio FROM precios LIMIT 5;"
+                ).fetchall()
+                st.write("🧪 Sample:", sample)
+            else:
+                st.warning("❌ No existe tabla 'precios'")
+        finally:
+            con.close()
+
+
         valores_referencia = cargar_valores_referencia(Path(db_path))
+        # =========================
+        # 🧪 DEBUG 5: validar valores_referencia
+        # =========================
+        st.markdown("### 🧪 DEBUG valores_referencia (5)")
+        st.write({
+            "type": str(type(valores_referencia)),
+            "len": (len(valores_referencia) if isinstance(valores_referencia, dict) else None),
+        })
+        
+        if isinstance(valores_referencia, dict):
+            st.write("Primeros 5 items:", list(valores_referencia.items())[:5])
+        else:
+            st.write("Contenido:", valores_referencia)
+
         st.session_state["db_precios_path"] = str(db_path)
 
     except FileNotFoundError as e:
@@ -943,6 +995,7 @@ with tab_based:
         st.caption("Edición deshabilitada: en vista SUBCONTRATOS la BD es SOLO LECTURA.")
     elif modo_critico:
         st.caption("Edición deshabilitada: estás en MODO CRÍTICO.")
+
 
 
 
