@@ -1,3 +1,4 @@
+# app.py
 import os
 import tempfile
 import zipfile
@@ -8,8 +9,6 @@ import streamlit as st
 import pandas as pd
 
 from control_actas_local import get_backend
-
-
 
 # ==================================================
 # Drive utils (import robusto: raíz o utils/)
@@ -48,13 +47,17 @@ def list_files_in_folder(service, folder_id: str):
     page_token = None
 
     while True:
-        resp = service.files().list(
-            q=q,
-            fields=fields,
-            pageToken=page_token,
-            supportsAllDrives=True,
-            includeItemsFromAllDrives=True,
-        ).execute()
+        resp = (
+            service.files()
+            .list(
+                q=q,
+                fields=fields,
+                pageToken=page_token,
+                supportsAllDrives=True,
+                includeItemsFromAllDrives=True,
+            )
+            .execute()
+        )
 
         out.extend(resp.get("files", []))
         page_token = resp.get("nextPageToken")
@@ -89,7 +92,6 @@ def sync_actas_mes_desde_drive(
       base_root / proyecto / control_actas / actas / nombre_carpeta_mes
     - Por eso descargamos EXACTO ahí (SIN meter /anio/ en local).
     """
-    # Estructura objetivo local (la que tu backend espera)
     local_mes = base_root / proyecto / "control_actas" / "actas" / nombre_carpeta_mes
     local_mes.mkdir(parents=True, exist_ok=True)
 
@@ -109,12 +111,8 @@ def sync_actas_mes_desde_drive(
             cur = nxt
         return cur
 
-    # Tu ROOT YA contiene: Grupo 3, Grupo 4, precios_referencia, etc.
     candidates = [
-        # ROOT / Grupo 3 / control_actas / actas / octubre2025
         [proyecto, "control_actas", "actas", nombre_carpeta_mes],
-
-        # Variantes por si alguien guardó el año en medio (por si acaso)
         [proyecto, "control_actas", "actas", str(anio), nombre_carpeta_mes],
         [proyecto, str(anio), "control_actas", "actas", nombre_carpeta_mes],
     ]
@@ -133,11 +131,9 @@ def sync_actas_mes_desde_drive(
         raise FileNotFoundError(
             "No pude ubicar la carpeta del mes en Drive.\n\n"
             f"Ruta intentada (último intento): {' / '.join(last_fail or [])}\n\n"
-            "Carpetas visibles en DRIVE_ROOT_FOLDER_ID:\n- "
-            + "\n- ".join(root_folders[:80])
+            "Carpetas visibles en DRIVE_ROOT_FOLDER_ID:\n- " + "\n- ".join(root_folders[:80])
         )
 
-    # Listar archivos del mes y descargar xlsx
     items = list_files_in_folder(service, mes_id)
 
     descargados = 0
@@ -170,20 +166,16 @@ def exportar_resultados_a_drive(service, root_id: str, proyecto: str, nombre_car
 
     mime_xlsx = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
-    # Salidas del mes
     for p in Path(info["carpeta_salida_mes"]).glob("*.xlsx"):
         upload_or_update_file(service, salidas_mes_id, p, mime_xlsx)
 
-    # Resumen del mes
     for p in Path(info["carpeta_resumen_mes"]).glob("*.xlsx"):
         upload_or_update_file(service, resumen_mes_id, p, mime_xlsx)
 
-    # Base general
     base_general = Path(info["carpeta_datos"]) / "base_general.xlsx"
     if base_general.exists():
         upload_or_update_file(service, datos_id, base_general, mime_xlsx)
 
-    # Resumen global
     resumen_global = Path(info["carpeta_resumen"]) / "resumen_global.xlsx"
     if resumen_global.exists():
         upload_or_update_file(service, resumen_id, resumen_global, mime_xlsx)
@@ -207,7 +199,7 @@ def _init_state():
     if "oficina_ok" not in st.session_state:
         st.session_state["oficina_ok"] = False
     if "local_inputs_dir" not in st.session_state:
-        st.session_state["local_inputs_dir"] = None  # Path str
+        st.session_state["local_inputs_dir"] = None
     if "local_inputs_label" not in st.session_state:
         st.session_state["local_inputs_label"] = None
 
@@ -249,7 +241,6 @@ def vista_selector():
     if st.session_state["vista"] is None:
         st.stop()
 
-    # Gate para OFICINA
     if st.session_state["vista"] == "OFICINA" and not st.session_state["oficina_ok"]:
         st.markdown("---")
         st.subheader("🔐 Acceso OFICINA")
@@ -340,7 +331,6 @@ def detectar_cloud() -> bool:
 
 IS_CLOUD = detectar_cloud()
 
-
 # ==================================================
 # Configuración básica de la página
 # ==================================================
@@ -350,13 +340,11 @@ st.set_page_config(
     layout="wide",
 )
 
-
 # ==================================================
 # Selector de vista (ANTES de todo lo demás)
 # ==================================================
 vista_selector()
 VISTA = st.session_state["vista"]  # "OFICINA" | "SUBCONTRATOS"
-
 
 # ==================================================
 # TEMA (OSCURO / CLARO)
@@ -428,7 +416,6 @@ small, .stCaption, [data-testid="stCaptionContainer"] {{
 hr {{
   border-color: var(--border) !important;
 }}
-/* botones */
 .stButton > button {{
   background: var(--primary) !important;
   color: var(--button_text) !important;
@@ -457,7 +444,6 @@ a[data-testid="stLinkButton"] {{
     unsafe_allow_html=True,
 )
 
-
 # ==================================================
 # Constantes UI
 # ==================================================
@@ -472,10 +458,19 @@ LOOKER_LINKS = {
 }
 
 MESES = [
-    "enero", "febrero", "marzo", "abril", "mayo", "junio",
-    "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"
+    "enero",
+    "febrero",
+    "marzo",
+    "abril",
+    "mayo",
+    "junio",
+    "julio",
+    "agosto",
+    "septiembre",
+    "octubre",
+    "noviembre",
+    "diciembre",
 ]
-
 
 # ==================================================
 # Sidebar filtros
@@ -499,7 +494,8 @@ anio_proyecto = st.sidebar.selectbox(
     "Año (Proyecto / Actas / Salidas)",
     ANIOS_FALLBACK,
     index=ANIOS_FALLBACK.index(st.session_state.get("anio_proyecto", 2026))
-    if st.session_state.get("anio_proyecto", 2026) in ANIOS_FALLBACK else 0,
+    if st.session_state.get("anio_proyecto", 2026) in ANIOS_FALLBACK
+    else 0,
 )
 st.session_state["anio_proyecto"] = anio_proyecto
 
@@ -513,7 +509,8 @@ if not modo_critico:
         "Base de precios (versión/año)",
         VERSIONES_FALLBACK,
         index=VERSIONES_FALLBACK.index(st.session_state.get("precios_version", "2025"))
-        if st.session_state.get("precios_version", "2025") in VERSIONES_FALLBACK else 1,
+        if st.session_state.get("precios_version", "2025") in VERSIONES_FALLBACK
+        else 1,
     )
     st.session_state["precios_version"] = precios_version
 else:
@@ -523,7 +520,6 @@ else:
 st.sidebar.markdown("---")
 procesar_btn = st.sidebar.button("🚀 Procesar actas")
 
-
 # ==================================================
 # Backend (ya con anio_proyecto definido)
 # ==================================================
@@ -532,7 +528,19 @@ BASE_ROOT = backend["BASE_ROOT"]
 correr_todo = backend["correr_todo"]
 correr_todos_los_meses = backend.get("correr_todos_los_meses")
 listar_carpetas_mes = backend["listar_carpetas_mes"]
+backend_module = backend.get("backend_module")
 
+# Intentar exponer funciones de edición desde el backend activo (si existen)
+leer_precios = None
+upsert_precios = None
+try:
+    bp = getattr(backend_module, "bd_precios", None)
+    if bp is not None:
+        leer_precios = getattr(bp, "leer_precios", None)
+        upsert_precios = getattr(bp, "upsert_precios", None)
+except Exception:
+    leer_precios = None
+    upsert_precios = None
 
 # ==================================================
 # Header
@@ -551,7 +559,6 @@ if VISTA == "SUBCONTRATOS":
     render_subcontratos_uploader()
     st.info("🧩 Nota: la carga ya queda lista en st.session_state['local_inputs_dir'].")
 
-
 # ==================================================
 # Carga BD precios (NORMAL)
 # ==================================================
@@ -559,12 +566,13 @@ valores_referencia = {}
 db_path = None
 st.session_state["db_precios_path"] = None
 
+# guardamos IDs (para edición/subida posterior si estás en Cloud)
+st.session_state.setdefault("precios_version_folder_id", None)
+st.session_state.setdefault("precios_db_file_id", None)
+
 if not modo_critico:
-    # Importa desde el backend ACTIVO (normal/crítico) usando import relativo ya resuelto por get_backend.
-    # En cloud, 'control_actas' puede NO ser un paquete global, por eso importamos del backend devuelto:
     try:
-        cargar_valores_referencia = backend["cargar_valores_referencia"]
-        st.write(cargar_valores_referencia)
+        cargar_valores_referencia = backend.get("cargar_valores_referencia", None)
     except Exception:
         cargar_valores_referencia = None
 
@@ -585,6 +593,9 @@ if not modo_critico:
             if not file_id:
                 raise FileNotFoundError("No se encontró 'precios_referencia.db' en esa versión.")
 
+            st.session_state["precios_version_folder_id"] = version_folder_id
+            st.session_state["precios_db_file_id"] = file_id
+
             tmp_dir = Path(tempfile.gettempdir())
             db_path = tmp_dir / f"precios_referencia_{precios_version}.db"
             download_file(service, file_id, db_path)
@@ -601,8 +612,55 @@ if not modo_critico:
         if cargar_valores_referencia is None:
             raise ImportError("No pude obtener 'cargar_valores_referencia' desde el backend activo.")
 
+        # ----------------------
+        # ✅ DEBUG BD local (3)
+        # ----------------------
+        try:
+            import sqlite3
+
+            p = Path(db_path)
+            st.markdown("### 🧪 DEBUG BD local (3)")
+            st.json(
+                {
+                    "db_path": str(p),
+                    "exists": p.exists(),
+                    "size_bytes": (p.stat().st_size if p.exists() else None),
+                }
+            )
+
+            if p.exists():
+                con = sqlite3.connect(str(p))
+                try:
+                    tablas = con.execute(
+                        "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name;"
+                    ).fetchall()
+                    st.caption(f"📦 Tablas: {[t[0] for t in tablas]}")
+                finally:
+                    con.close()
+        except Exception as e:
+            st.error("DEBUG BD local falló:")
+            st.exception(e)
+        # ----------------------
+
         valores_referencia = cargar_valores_referencia(Path(db_path))
         st.session_state["db_precios_path"] = str(db_path)
+
+        # ----------------------
+        # ✅ DEBUG valores_referencia (5)
+        # ----------------------
+        try:
+            st.markdown("### 🧪 DEBUG valores_referencia (5)")
+            if isinstance(valores_referencia, dict):
+                head_items = list(valores_referencia.items())[:5]
+                st.json({"type": str(type(valores_referencia)), "len": len(valores_referencia)})
+                st.caption(f"Primeros 5 items: {head_items}")
+            else:
+                st.json({"type": str(type(valores_referencia))})
+                st.write(valores_referencia)
+        except Exception as e:
+            st.error("DEBUG valores_referencia falló:")
+            st.exception(e)
+        # ----------------------
 
     except FileNotFoundError as e:
         st.warning("⚠️ No se encontró la base de precios en el entorno actual. Se continúa sin precios de referencia.")
@@ -616,14 +674,12 @@ if not modo_critico:
         valores_referencia = {}
         st.session_state["db_precios_path"] = None
 
-
 # ==================================================
 # Tabs
 # ==================================================
 tab_run, tab_resumen, tab_informes, tab_based = st.tabs(
     ["▶ Ejecutar proceso", "📊 Ver resúmenes", "📒📋 Ver informes", "🧾 Bases de precios"]
 )
-
 
 # ==================================================
 # TAB 1: ejecutar proceso
@@ -632,7 +688,6 @@ with tab_run:
     st.subheader("Ejecución")
 
     if procesar_btn:
-        # Si estás en CLOUD+OFICINA, baja las actas del mes antes de correr
         if IS_CLOUD and VISTA == "OFICINA":
             try:
                 service = get_drive_service()
@@ -642,7 +697,6 @@ with tab_run:
                 )
                 st.caption(f"☁️ Actas sincronizadas: {n} archivos en {local_mes}")
 
-                # Debug: esto te mata el "descargó 5, procesa 0"
                 expected = Path(BASE_ROOT) / proyecto / "control_actas" / "actas" / nombre_carpeta_mes
                 st.caption(f"🔎 Backend leerá: {expected}")
                 st.caption(f"🔎 XLSX en esa carpeta: {len(list(expected.glob('*.xlsx')))}")
@@ -661,7 +715,6 @@ with tab_run:
                 modo_critico=modo_critico,
             )
 
-        # Export a Drive (solo Cloud + Oficina)
         if IS_CLOUD and VISTA == "OFICINA":
             try:
                 service = get_drive_service()
@@ -680,8 +733,16 @@ with tab_run:
         carpeta_resumen_mes = info["carpeta_resumen_mes"]
         carpeta_datos = info["carpeta_datos"]
 
-        n_entrada = len([f for f in os.listdir(carpeta_mes) if f.lower().endswith(".xlsx")]) if os.path.exists(carpeta_mes) else 0
-        n_salida = len([f for f in os.listdir(carpeta_salida_mes) if f.lower().endswith(".xlsx")]) if os.path.exists(carpeta_salida_mes) else 0
+        n_entrada = (
+            len([f for f in os.listdir(carpeta_mes) if f.lower().endswith(".xlsx")])
+            if os.path.exists(carpeta_mes)
+            else 0
+        )
+        n_salida = (
+            len([f for f in os.listdir(carpeta_salida_mes) if f.lower().endswith(".xlsx")])
+            if os.path.exists(carpeta_salida_mes)
+            else 0
+        )
 
         col1, col2, col3 = st.columns(3)
         col1.metric("Actas encontradas", n_entrada)
@@ -694,7 +755,6 @@ with tab_run:
         st.info("Usa el botón de la barra lateral para ejecutar el proceso de **un** mes.")
 
     st.markdown("---")
-
 
 # ==================================================
 # TAB 2: resúmenes
@@ -762,7 +822,6 @@ with tab_resumen:
     except Exception:
         st.info("No existe aún la hoja 'CANTIDADES'. Ejecuta el proceso.")
 
-
 # ==================================================
 # TAB 3: Looker
 # ==================================================
@@ -773,7 +832,6 @@ with tab_informes:
         st.link_button("Abrir Dashboard en Looker Studio", url_dashboard)
     else:
         st.warning("No hay un dashboard configurado para este proyecto.")
-
 
 # ==================================================
 # TAB 4: Bases de precios
@@ -805,4 +863,91 @@ with tab_based:
             else:
                 st.info("valores_referencia no es dict. Muestro tal cual:")
                 st.write(valores_referencia)
+
+    # ==================================================
+    # ✅ EDICIÓN BD (SOLO OFICINA) - usando backend activo
+    # ==================================================
+    if (
+        VISTA == "OFICINA"
+        and st.session_state.get("oficina_ok") is True
+        and (not modo_critico)
+        and st.session_state.get("db_precios_path")
+    ):
+        st.markdown("---")
+        st.subheader("✏️ Edición de base de precios (SOLO OFICINA)")
+
+        if leer_precios is None or upsert_precios is None:
+            st.warning(
+                "Este backend no expone funciones de edición (leer_precios/upsert_precios). "
+                "Revisa que existan en control_normal/control_actas/bd_precios.py."
+            )
+            st.stop()
+
+        try:
+            df_precios_db = leer_precios(Path(st.session_state["db_precios_path"]))
+        except Exception as e:
+            st.error("No se pudo leer la BD para edición.")
+            st.exception(e)
+            df_precios_db = pd.DataFrame(columns=["actividad", "precio", "unidad", "updated_at"])
+
+        if df_precios_db is None or df_precios_db.empty:
+            df_precios_db = pd.DataFrame(columns=["actividad", "precio", "unidad", "updated_at"])
+
+        st.caption("Puedes **editar precios** y **agregar filas**. `updated_at` se actualiza al guardar.")
+
+        df_editado = st.data_editor(
+            df_precios_db,
+            num_rows="dynamic",
+            use_container_width=True,
+            disabled=["updated_at"],
+            column_config={
+                "actividad": st.column_config.TextColumn("Actividad", required=True),
+                "precio": st.column_config.NumberColumn("Precio", required=True, format="%.2f"),
+                "unidad": st.column_config.TextColumn("Unidad"),
+                "updated_at": st.column_config.TextColumn("Última actualización", disabled=True),
+            },
+            key="editor_precios_oficina",
+        )
+
+        col_g1, col_g2 = st.columns([1, 1])
+
+        with col_g1:
+            if st.button("💾 Guardar cambios en BD", use_container_width=True):
+                try:
+                    payload = df_editado[["actividad", "precio", "unidad"]].copy()
+                    upsert_precios(Path(st.session_state["db_precios_path"]), payload)
+
+                    # Si es Cloud: subir a Drive como precios_referencia.db
+                    if IS_CLOUD:
+                        service = get_drive_service()
+                        version_folder_id = st.session_state.get("precios_version_folder_id")
+                        if not version_folder_id:
+                            raise RuntimeError(
+                                "No tengo 'precios_version_folder_id' en session_state (no puedo subir a Drive)."
+                            )
+
+                        tmp_dir = Path(tempfile.gettempdir())
+                        tmp_upload = tmp_dir / "precios_referencia.db"
+                        shutil.copyfile(Path(st.session_state["db_precios_path"]), tmp_upload)
+
+                        mime_db = "application/octet-stream"
+                        upload_or_update_file(service, version_folder_id, tmp_upload, mime_db)
+
+                    st.success("✅ BD actualizada correctamente.")
+                    st.rerun()
+
+                except Exception as e:
+                    st.error("❌ No se pudo guardar la BD.")
+                    st.exception(e)
+
+        with col_g2:
+            if st.button("↩️ Recargar (descartar cambios locales)", use_container_width=True):
+                st.rerun()
+
+    elif VISTA == "SUBCONTRATOS":
+        st.caption("Edición deshabilitada: en vista SUBCONTRATOS la BD es SOLO LECTURA.")
+    elif modo_critico:
+        st.caption("Edición deshabilitada: estás en MODO CRÍTICO.")
+
+
 
