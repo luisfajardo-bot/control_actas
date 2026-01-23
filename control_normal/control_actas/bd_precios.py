@@ -5,11 +5,7 @@ import sqlite3
 from pathlib import Path
 from datetime import datetime
 
-
 import pandas as pd
-
-
-
 
 
 DDL = """
@@ -22,37 +18,12 @@ CREATE TABLE IF NOT EXISTS precios (
 """
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 def connect(db_path: str | Path) -> sqlite3.Connection:
-
-
-
     con = sqlite3.connect(str(db_path))
-
     con.execute("PRAGMA journal_mode=WAL;")
     con.execute("PRAGMA synchronous=NORMAL;")
-
     con.execute(DDL)
-
     return con
-
-
-
 
 
 def leer_precios(db_path: str | Path) -> pd.DataFrame:
@@ -68,51 +39,14 @@ def leer_precios(db_path: str | Path) -> pd.DataFrame:
 
 
 def upsert_precios(db_path: str | Path, df: pd.DataFrame) -> None:
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
     """
     Inserta/actualiza por 'actividad' (PRIMARY KEY).
     Espera columnas: actividad, precio (unidad opcional)
-
-
     """
     if df.empty:
         return
 
     df2 = df.copy()
-
-
-
-
-
-
-
     df2["actividad"] = df2["actividad"].astype(str).str.strip()
 
     # Validaciones básicas
@@ -131,47 +65,13 @@ def upsert_precios(db_path: str | Path, df: pd.DataFrame) -> None:
         df2["unidad"] = None
     df2["updated_at"] = now
 
-
-
-
-
-
-
-
-
-
-
-
-
-
     rows = list(
         df2[["actividad", "precio", "unidad", "updated_at"]]
         .itertuples(index=False, name=None)
     )
 
-
-
-
     con = connect(db_path)
     try:
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
         con.executemany(
             """
             INSERT INTO precios (actividad, precio, unidad, updated_at)
@@ -183,77 +83,8 @@ def upsert_precios(db_path: str | Path, df: pd.DataFrame) -> None:
             """,
             rows
         )
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
         con.commit()
     finally:
-
-
-
-
-
-
-
+        con.close()
 
 
