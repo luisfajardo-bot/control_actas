@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import sys
 import tempfile
 import importlib.util
 from pathlib import Path
@@ -17,7 +18,6 @@ def is_cloud() -> bool:
     """
     try:
         import streamlit as st
-
         return "DRIVE_ROOT_FOLDER_ID" in st.secrets
     except Exception:
         pass
@@ -33,8 +33,7 @@ def _backend_pkg_dir_for(modo: str) -> Path:
     """
     root = Path(__file__).resolve().parent
     base = root / ("control_critico" if modo == "critico" else "control_normal")
-    pkg_dir = base / "control_actas"
-    return pkg_dir
+    return base / "control_actas"
 
 
 def _import_backend(modo: str):
@@ -42,7 +41,8 @@ def _import_backend(modo: str):
     Importa el package del backend como un paquete aislado (nombre único),
     SIN tocar sys.path y SIN purgar sys.modules.
 
-    Esto evita los KeyError raros de Streamlit (import a medias en reruns).
+    Importante: para que funcionen imports relativos (from .config import ...),
+    el paquete debe estar en sys.modules ANTES de ejecutar __init__.py.
     """
     if modo in _BACKEND_CACHE:
         return _BACKEND_CACHE[modo]
@@ -53,19 +53,27 @@ def _import_backend(modo: str):
     if not init_py.exists():
         raise FileNotFoundError(f"No existe __init__.py del backend en: {init_py}")
 
-    # Nombre único por modo para evitar colisiones: control_actas__normal / control_actas__critico
     module_name = f"control_actas__{modo}"
 
     spec = importlib.util.spec_from_file_location(
         module_name,
         str(init_py),
-        submodule_search_locations=[str(pkg_dir)],  # clave para que funcionen imports relativos
+        submodule_search_locations=[str(pkg_dir)],
     )
     if spec is None or spec.loader is None:
         raise ImportError(f"No pude crear spec para backend '{modo}' desde: {init_py}")
 
     mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)  # type: ignore[attr-defined]
+
+    # ✅ CLAVE: registrar el paquete antes de exec_module para que .config y demás submódulos existan
+    sys.modules[module_name] = mod
+
+    try:
+        spec.loader.exec_module(mod)  # type: ignore[attr-defined]
+    except Exception:
+        # Si falla, limpiamos el registro para no dejar basura en sys.modules
+        sys.modules.pop(module_name, None)
+        raise
 
     _BACKEND_CACHE[modo] = mod
     return mod
@@ -98,7 +106,6 @@ def get_backend(modo: str, *, anio_proyecto: Optional[int | str] = None) -> Dict
     # Intentar exponer cargar_valores_referencia desde el backend aislado
     cargar_valores_referencia = None
     try:
-        # Si el __init__.py del backend expone bd_precios como submódulo importado
         bd = getattr(backend, "bd_precios", None)
         if bd is not None:
             cargar_valores_referencia = getattr(bd, "cargar_valores_referencia", None)
@@ -112,19 +119,8 @@ def get_backend(modo: str, *, anio_proyecto: Optional[int | str] = None) -> Dict
         "correr_todos_los_meses": getattr(backend, "correr_todos_los_meses", None),
         "listar_carpetas_mes": getattr(backend, "listar_carpetas_mes"),
         "cargar_valores_referencia": cargar_valores_referencia,
-        # (Opcional) por si quieres acceder al módulo completo desde app.py para debug:
-        "backend_module": backend,
+        "backend_module": backend,  # útil para debug si lo necesitas
     }
-
-
-
-
-
-
-
-
-
-
 
 
 
