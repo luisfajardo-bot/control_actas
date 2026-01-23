@@ -512,6 +512,17 @@ else:
     precios_version = st.session_state.get("precios_version", "2025")
     st.session_state["precios_version"] = precios_version
 
+#debug debug
+st.sidebar.markdown("### 🧪 DEBUG precios")
+st.sidebar.code({
+    "IS_CLOUD": IS_CLOUD,
+    "modo_backend": modo_backend,
+    "modo_critico": modo_critico,
+    "precios_version": precios_version,
+    "cwd": os.getcwd(),
+})
+#debug debug
+
 st.sidebar.markdown("---")
 procesar_btn = st.sidebar.button("🚀 Procesar actas")
 
@@ -909,6 +920,7 @@ with tab_based:
         st.caption("Edición deshabilitada: en vista SUBCONTRATOS la BD es SOLO LECTURA.")
     elif modo_critico:
         st.caption("Edición deshabilitada: estás en MODO CRÍTICO.")
+
 
 
 
