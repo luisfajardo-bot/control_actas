@@ -676,7 +676,7 @@ if VISTA == "SUBCONTRATOS":
             except Exception:
                 pass
     
-        st.caption(f"📥 Actas listas para procesar, se encontraton: {copiados} archivo(s)")
+        
 
     with colx2:
         # ✅ Cada vez que procesas: borrar resultados previos y crear un sandbox NUEVO
@@ -703,9 +703,8 @@ if VISTA == "SUBCONTRATOS":
                     copiados += 1
                 except Exception:
                     pass
-    
-            st.caption(f"🧪 Sandbox nuevo creado: {proyecto_sub}")
-            st.caption(f"📥 Copiados a sandbox: {copiados} archivos")
+            st.caption(f"📥 Actas listas para procesar, se encontraton: {copiados} archivo(s)")
+            st.caption(f"📥 Archivos procesados para descarga local: {copiados}")
 
             with st.spinner("Procesando actas subidas..."):
                 info_sub = correr_todo(
@@ -1011,6 +1010,7 @@ with tab_based:
             else:
                 st.info("valores_referencia no es dict. Muestro tal cual:")
                 st.write(valores_referencia)
+
 
 
 
