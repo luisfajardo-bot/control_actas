@@ -4,10 +4,16 @@ import pandas as pd
 
 from .meses import parsear_anio_mes_desde_carpeta, listar_carpetas_mes
 from .excel_utils import preparar_registro
-from .procesar_actas import revisar_acta
+from .procesar_actas import revisar_acta, normalizar
 
 
 def correr_todo(base_root: str, proyecto: str, nombre_carpeta_mes: str, valores_referencia: dict, modo_critico: bool = False):
+    # Normaliza llaves de la BD: "Actividad" -> normalizar("Actividad")
+    valores_referencia = {
+        normalizar(k): v
+        for k, v in (valores_referencia or {}).items()
+        if normalizar(k)
+    }
     base_path = os.path.join(base_root, proyecto, "control_actas")
 
     anio_actual, mes_nombre = parsear_anio_mes_desde_carpeta(nombre_carpeta_mes)
@@ -165,3 +171,4 @@ def correr_todos_los_meses(base_root: str, proyecto: str, valores_referencia: di
 
     print(f"\n✅ Procesados {len(resultados)} meses para el proyecto '{proyecto}'.")
     return resultados
+
