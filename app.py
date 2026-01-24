@@ -724,6 +724,108 @@ with tab_resumen:
                 if resumen_folder_id:
                     st.write("Archivos en resumen_mes:", _list_names(service, resumen_folder_id))
                 else:
-                    st.warning("No
+                    st.warning("No encontré la carpeta Drive: proyecto/control_actas/resumen/<mes><año>")
+
+        except Exception as e:
+            st.warning(f"No pude sincronizar resúmenes desde Drive: {e}")
+
+    df_base = None
+    if os.path.exists(base_general_path):
+        try:
+            df_base = pd.read_excel(base_general_path)
+        except Exception as e:
+            df_base = None
+            st.error(f"No se pudo leer base_general.xlsx: {e}")
+
+    with col_a:
+        st.markdown("#### Base general")
+        if df_base is None or df_base.empty:
+            st.info("Aún no existe la base general o está vacía. Ejecuta el proceso primero.")
+        else:
+            st.dataframe(formatear_numeros_df(df_base.tail(200)), use_container_width=True)
+
+            cols_norm = {str(c).strip().lower(): c for c in df_base.columns}
+            col_contratista = None
+            for candidata in ["contratista", "contratista ", "nombre_contratista"]:
+                if candidata in cols_norm:
+                    col_contratista = cols_norm[candidata]
+                    break
+
+            if col_contratista:
+                contratista_sel = st.selectbox(
+                    "Filtrar por contratista (base general)",
+                    ["(Todos)"] + sorted(df_base[col_contratista].dropna().astype(str).unique().tolist()),
+                )
+
+                if contratista_sel != "(Todos)":
+                    st.dataframe(
+                        formatear_numeros_df(df_base[df_base[col_contratista].astype(str) == str(contratista_sel)]),
+                        use_container_width=True,
+                    )
+            else:
+                st.warning(f"No se encontró columna de contratista. Columnas: {list(df_base.columns)}")
+
+    if os.path.exists(resumen_mes_path):
+        with col_b:
+            st.markdown(f"#### Resumen mensual ({mes.capitalize()} {anio_proyecto})")
+            try:
+                df_resumen = pd.read_excel(resumen_mes_path, sheet_name="RESUMEN")
+                st.dataframe(formatear_numeros_df(df_resumen), use_container_width=True)
+            except Exception as e:
+                st.error(f"No se pudo leer el resumen mensual: {e}")
+    else:
+        col_b.info("Aún no hay resumen mensual generado para este periodo.")
+
+    st.markdown("#### Totales por contratista (Cantidades)")
+    try:
+        df_cat = pd.read_excel(resumen_mes_path, sheet_name="CANTIDADES")
+        st.dataframe(formatear_numeros_df(df_cat), use_container_width=True)
+    except Exception:
+        st.info("No existe aún la hoja 'CANTIDADES'. Ejecuta el proceso.")
+
+
+# ==================================================
+# TAB 3: Looker
+# ==================================================
+with tab_informes:
+    st.subheader(f"Dashboard del proyecto: {proyecto}")
+    url_dashboard = LOOKER_LINKS.get(proyecto)
+    if url_dashboard:
+        st.link_button("Abrir Dashboard en Looker Studio", url_dashboard)
+    else:
+        st.warning("No hay un dashboard configurado para este proyecto.")
+
+
+# ==================================================
+# TAB 4: Bases de precios
+# ==================================================
+with tab_based:
+    st.subheader("📂 Base de datos en uso")
+    ruta_bd = st.session_state.get("db_precios_path")
+
+    if not ruta_bd:
+        st.caption("No hay BD cargada (o estás en modo crítico / falló la carga).")
+    else:
+        carpeta = os.path.basename(os.path.dirname(ruta_bd))
+        archivo = os.path.basename(ruta_bd)
+        st.markdown(f"**Archivo activo:** {carpeta}/{archivo}")
+        if VISTA == "SUBCONTRATOS":
+            st.caption("Modo Subcontratos: esta BD se usa como SOLO LECTURA.")
+        else:
+            st.caption("Modo Oficina: BD accesible según permisos del entorno (Drive).")
+
+    if modo_backend == "normal":
+        st.caption("Esto muestra EXACTAMENTE lo que estás usando en modo NORMAL: valores_referencia.")
+        if not valores_referencia:
+            st.warning("valores_referencia está vacío.")
+        else:
+            if isinstance(valores_referencia, dict):
+                df_bn = pd.DataFrame([{"actividad": k, "precio": v} for k, v in valores_referencia.items()])
+                st.dataframe(formatear_numeros_df(df_bn), use_container_width=True, hide_index=True)
+                st.caption(f"Registros: {len(df_bn)}")
+            else:
+                st.info("valores_referencia no es dict. Muestro tal cual:")
+                st.write(valores_referencia)
+
 
 
