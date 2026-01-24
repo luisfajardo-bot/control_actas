@@ -211,6 +211,17 @@ def revisar_acta(
         "Concreto MR": 0.0,
         "Concreto estampado": 0.0,
     }
+        # 🐞 DEBUG CONTADORES
+    debug = {
+        "filas_iteradas": 0,
+        "sin_item_o_desc": 0,
+        "valor_unitario_none": 0,
+        "valor_unitario_no_num": 0,
+        "cantidad_no_num": 0,
+        "sin_valor_referencia": 0,
+        "registros_guardados": 0,
+    }
+
 
     try:
         wb = load_workbook(path_archivo, data_only=False)     # para escribir estilos
@@ -253,12 +264,15 @@ def revisar_acta(
 
     fila_inicio = 10
     for fila in range(fila_inicio, ws.max_row + 1):
+        debug["filas_iteradas"] += 1
         item = str(ws[f"{col_item}{fila}"].value or "").strip()
         desc_raw = ws[f"{col_desc}{fila}"].value
         un_raw = ws[f"{col_un}{fila}"].value
 
         if not item or not desc_raw:
+            debug["sin_item_o_desc"] += 1
             continue
+
 
         descripcion = str(desc_raw).strip()
         unidad = normalizar_unidad(un_raw)
@@ -278,9 +292,15 @@ def revisar_acta(
 
         # leer valor unitario desde wb_vals (por fórmulas)
         valor_cell = ws_vals[f"{col_valor}{fila}"].value
+        
+        if valor_cell is None:
+            debug["valor_unitario_none"] += 1
+            continue
+        
         try:
             valor = float(str(valor_cell).replace("$", "").replace(",", ""))
         except Exception:
+            debug["valor_unitario_no_num"] += 1
             continue
 
         # cantidad presenta (columna I)
@@ -288,7 +308,9 @@ def revisar_acta(
         try:
             cantidad_num = float(cantidad_presenta)
         except (TypeError, ValueError):
+            debug["cantidad_no_num"] += 1
             cantidad_num = 0.0
+
 
         es_nan = isinstance(cantidad_num, float) and math.isnan(cantidad_num)
         if cantidad_num == 0 or es_nan:
@@ -324,7 +346,9 @@ def revisar_acta(
             key = (desc_norm, unidad)
             valor_ref = valores_referencia.get(key)
             if valor_ref is None:
+                debug["sin_valor_referencia"] += 1
                 continue
+
 
         # Comparación (rojo si acta > ref, azul si acta < ref)
         TOL = 0.0
@@ -352,6 +376,8 @@ def revisar_acta(
                 "valor_ajustado": valor_ajustado,
                 "modo": "CRITICO" if modo_critico else "NORMAL",
             })
+            debug["registros_guardados"] += 1
+
 
     # ✅ NUEVO: guardar totales por acta para consolidar luego por contratista
     base_cantidades.append({
@@ -374,9 +400,12 @@ def revisar_acta(
     # (lo que ya tenías) hoja de cuadro de cantidades en el verificado
     tablas = _extraer_cantidades_por_familia(ws_vals, columnas)
     _crear_hoja_cuadro_cantidades(wb, tablas, nombre="CUADRO_CANTIDADES")
-
+    
+    print("🐞 DEBUG revisar_acta:", os.path.basename(path_archivo), debug)
+    
     wb.save(nombre_salida)
     print(f"✔ Revisado: {os.path.basename(path_archivo)}")
+
 
 
 
