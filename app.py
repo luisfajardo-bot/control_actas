@@ -9,8 +9,6 @@ import pandas as pd
 
 from control_actas_local import get_backend
 
-
-
 # ==================================================
 # Drive utils (import robusto: raíz o utils/)
 # ==================================================
@@ -89,7 +87,6 @@ def sync_actas_mes_desde_drive(
       base_root / proyecto / control_actas / actas / nombre_carpeta_mes
     - Por eso descargamos EXACTO ahí (SIN meter /anio/ en local).
     """
-    # Estructura objetivo local (la que tu backend espera)
     local_mes = base_root / proyecto / "control_actas" / "actas" / nombre_carpeta_mes
     local_mes.mkdir(parents=True, exist_ok=True)
 
@@ -109,12 +106,8 @@ def sync_actas_mes_desde_drive(
             cur = nxt
         return cur
 
-    # Tu ROOT YA contiene: Grupo 3, Grupo 4, precios_referencia, etc.
     candidates = [
-        # ROOT / Grupo 3 / control_actas / actas / octubre2025
         [proyecto, "control_actas", "actas", nombre_carpeta_mes],
-
-        # Variantes por si alguien guardó el año en medio (por si acaso)
         [proyecto, "control_actas", "actas", str(anio), nombre_carpeta_mes],
         [proyecto, str(anio), "control_actas", "actas", nombre_carpeta_mes],
     ]
@@ -137,7 +130,6 @@ def sync_actas_mes_desde_drive(
             + "\n- ".join(root_folders[:80])
         )
 
-    # Listar archivos del mes y descargar xlsx
     items = list_files_in_folder(service, mes_id)
 
     descargados = 0
@@ -170,20 +162,16 @@ def exportar_resultados_a_drive(service, root_id: str, proyecto: str, nombre_car
 
     mime_xlsx = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
-    # Salidas del mes
     for p in Path(info["carpeta_salida_mes"]).glob("*.xlsx"):
         upload_or_update_file(service, salidas_mes_id, p, mime_xlsx)
 
-    # Resumen del mes
     for p in Path(info["carpeta_resumen_mes"]).glob("*.xlsx"):
         upload_or_update_file(service, resumen_mes_id, p, mime_xlsx)
 
-    # Base general
     base_general = Path(info["carpeta_datos"]) / "base_general.xlsx"
     if base_general.exists():
         upload_or_update_file(service, datos_id, base_general, mime_xlsx)
 
-    # Resumen global
     resumen_global = Path(info["carpeta_resumen"]) / "resumen_global.xlsx"
     if resumen_global.exists():
         upload_or_update_file(service, resumen_id, resumen_global, mime_xlsx)
@@ -203,11 +191,11 @@ def formatear_numeros_df(df: pd.DataFrame) -> pd.DataFrame:
 
 def _init_state():
     if "vista" not in st.session_state:
-        st.session_state["vista"] = None  # None | "OFICINA" | "SUBCONTRATOS"
+        st.session_state["vista"] = None
     if "oficina_ok" not in st.session_state:
         st.session_state["oficina_ok"] = False
     if "local_inputs_dir" not in st.session_state:
-        st.session_state["local_inputs_dir"] = None  # Path str
+        st.session_state["local_inputs_dir"] = None
     if "local_inputs_label" not in st.session_state:
         st.session_state["local_inputs_label"] = None
 
@@ -249,7 +237,6 @@ def vista_selector():
     if st.session_state["vista"] is None:
         st.stop()
 
-    # Gate para OFICINA
     if st.session_state["vista"] == "OFICINA" and not st.session_state["oficina_ok"]:
         st.markdown("---")
         st.subheader("🔐 Acceso OFICINA")
@@ -328,17 +315,11 @@ def render_subcontratos_uploader():
         st.caption(f"Archivo guardado en: {xlsx_path}")
 
 
-# ==================================================
-# Entorno
-# ==================================================
 def detectar_cloud() -> bool:
     try:
         return "DRIVE_ROOT_FOLDER_ID" in st.secrets
     except Exception:
         return False
-
-
-IS_CLOUD = detectar_cloud()
 
 
 # ==================================================
@@ -350,13 +331,13 @@ st.set_page_config(
     layout="wide",
 )
 
+IS_CLOUD = detectar_cloud()
 
 # ==================================================
 # Selector de vista (ANTES de todo lo demás)
 # ==================================================
 vista_selector()
-VISTA = st.session_state["vista"]  # "OFICINA" | "SUBCONTRATOS"
-
+VISTA = st.session_state["vista"]
 
 # ==================================================
 # TEMA (OSCURO / CLARO)
@@ -428,7 +409,6 @@ small, .stCaption, [data-testid="stCaptionContainer"] {{
 hr {{
   border-color: var(--border) !important;
 }}
-/* botones */
 .stButton > button {{
   background: var(--primary) !important;
   color: var(--button_text) !important;
@@ -457,7 +437,6 @@ a[data-testid="stLinkButton"] {{
     unsafe_allow_html=True,
 )
 
-
 # ==================================================
 # Constantes UI
 # ==================================================
@@ -475,7 +454,6 @@ MESES = [
     "enero", "febrero", "marzo", "abril", "mayo", "junio",
     "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"
 ]
-
 
 # ==================================================
 # Sidebar filtros
@@ -523,16 +501,14 @@ else:
 st.sidebar.markdown("---")
 procesar_btn = st.sidebar.button("🚀 Procesar actas")
 
-
 # ==================================================
-# Backend (ya con anio_proyecto definido)
+# Backend
 # ==================================================
 backend = get_backend(modo_backend, anio_proyecto=anio_proyecto)
 BASE_ROOT = backend["BASE_ROOT"]
 correr_todo = backend["correr_todo"]
 correr_todos_los_meses = backend.get("correr_todos_los_meses")
 listar_carpetas_mes = backend["listar_carpetas_mes"]
-
 
 # ==================================================
 # Header
@@ -551,7 +527,6 @@ if VISTA == "SUBCONTRATOS":
     render_subcontratos_uploader()
     st.info("🧩 Nota: la carga ya queda lista en st.session_state['local_inputs_dir'].")
 
-
 # ==================================================
 # Carga BD precios (NORMAL)
 # ==================================================
@@ -560,8 +535,6 @@ db_path = None
 st.session_state["db_precios_path"] = None
 
 if not modo_critico:
-    # Importa desde el backend ACTIVO (normal/crítico) usando import relativo ya resuelto por get_backend.
-    # En cloud, 'control_actas' puede NO ser un paquete global, por eso importamos del backend devuelto:
     try:
         cargar_valores_referencia = backend["cargar_valores_referencia"]
     except Exception:
@@ -615,14 +588,12 @@ if not modo_critico:
         valores_referencia = {}
         st.session_state["db_precios_path"] = None
 
-
 # ==================================================
 # Tabs
 # ==================================================
 tab_run, tab_resumen, tab_informes, tab_based = st.tabs(
     ["▶ Ejecutar proceso", "📊 Ver resúmenes", "📒📋 Ver informes", "🧾 Bases de precios"]
 )
-
 
 # ==================================================
 # TAB 1: ejecutar proceso
@@ -631,7 +602,6 @@ with tab_run:
     st.subheader("Ejecución")
 
     if procesar_btn:
-        # Si estás en CLOUD+OFICINA, baja las actas del mes antes de correr
         if IS_CLOUD and VISTA == "OFICINA":
             try:
                 service = get_drive_service()
@@ -641,7 +611,6 @@ with tab_run:
                 )
                 st.caption(f"☁️ Actas sincronizadas: {n} archivos en {local_mes}")
 
-                # Debug: esto te mata el "descargó 5, procesa 0"
                 expected = Path(BASE_ROOT) / proyecto / "control_actas" / "actas" / nombre_carpeta_mes
                 st.caption(f"🔎 Backend leerá: {expected}")
                 st.caption(f"🔎 XLSX en esa carpeta: {len(list(expected.glob('*.xlsx')))}")
@@ -660,7 +629,6 @@ with tab_run:
                 modo_critico=modo_critico,
             )
 
-        # Export a Drive (solo Cloud + Oficina)
         if IS_CLOUD and VISTA == "OFICINA":
             try:
                 service = get_drive_service()
@@ -676,7 +644,6 @@ with tab_run:
 
         carpeta_mes = info["carpeta_mes"]
         carpeta_salida_mes = info["carpeta_salida_mes"]
-        carpeta_resumen_mes = info["carpeta_resumen_mes"]
         carpeta_datos = info["carpeta_datos"]
 
         n_entrada = len([f for f in os.listdir(carpeta_mes) if f.lower().endswith(".xlsx")]) if os.path.exists(carpeta_mes) else 0
@@ -694,17 +661,12 @@ with tab_run:
 
     st.markdown("---")
 
-
 # ==================================================
 # TAB 2: resúmenes
 # ==================================================
 with tab_resumen:
     st.subheader("Resúmenes y registros")
     col_a, col_b = st.columns(2)
-        # -----------------------------
-    # SOLO TAB RESÚMENES (Cloud): traer archivos desde Drive a /tmp
-    # -----------------------------
-    IS_CLOUD = "STREAMLIT_RUNTIME" in os.environ or "DRIVE_ROOT_FOLDER_ID" in st.secrets
 
     def _drive_folder_path_to_id(service, root_id: str, parts: list[str]) -> str | None:
         cur = root_id
@@ -730,32 +692,27 @@ with tab_resumen:
         except Exception:
             return []
 
-    # Rutas locales (filesystem) que ya usa tu código
     base_general_path = os.path.join(BASE_ROOT, proyecto, "control_actas", "datos", "base_general.xlsx")
     carpeta_resumen_mes = os.path.join(BASE_ROOT, proyecto, "control_actas", "resumen", nombre_carpeta_mes)
     resumen_mes_path = os.path.join(carpeta_resumen_mes, f"resumen_{nombre_carpeta_mes}.xlsx")
 
-    # Si estamos en Cloud, intentamos bajar desde Drive ANTES de leer
     if IS_CLOUD:
         try:
             service = get_drive_service()
             root_id = st.secrets["DRIVE_ROOT_FOLDER_ID"]
 
-            # 1) base_general.xlsx
             datos_folder_id = _drive_folder_path_to_id(
                 service, root_id, [proyecto, "control_actas", "datos"]
             )
             if datos_folder_id:
                 _download_if_exists(service, datos_folder_id, "base_general.xlsx", base_general_path)
 
-            # 2) resumen mensual
             resumen_folder_id = _drive_folder_path_to_id(
                 service, root_id, [proyecto, "control_actas", "resumen", nombre_carpeta_mes]
             )
             if resumen_folder_id:
                 _download_if_exists(service, resumen_folder_id, f"resumen_{nombre_carpeta_mes}.xlsx", resumen_mes_path)
 
-            # Mini panel: qué hay disponible en Drive (para debug visual)
             with st.expander("📦 Debug Drive (solo Ver resúmenes)", expanded=False):
                 st.write("**Ruta Drive base_general:**", f"{proyecto}/control_actas/datos/base_general.xlsx")
                 if datos_folder_id:
@@ -767,123 +724,6 @@ with tab_resumen:
                 if resumen_folder_id:
                     st.write("Archivos en resumen_mes:", _list_names(service, resumen_folder_id))
                 else:
-                    st.warning("No encontré la carpeta Drive: proyecto/control_actas/resumen/<mes><año>")
-
-        except Exception as e:
-            st.warning(f"No pude sincronizar resúmenes desde Drive: {e}")
-
-
-    base_general_path = os.path.join(BASE_ROOT, proyecto, "control_actas", "datos", "base_general.xlsx")
-
-    df_base = None
-    if os.path.exists(base_general_path):
-        try:
-            df_base = pd.read_excel(base_general_path)
-        except Exception as e:
-            df_base = None
-            st.error(f"No se pudo leer base_general.xlsx: {e}")
-
-    with col_a:
-        st.markdown("#### Base general")
-        if df_base is None or df_base.empty:
-            st.info("Aún no existe la base general o está vacía. Ejecuta el proceso primero.")
-        else:
-            st.dataframe(formatear_numeros_df(df_base.tail(200)), use_container_width=True)
-
-            cols_norm = {str(c).strip().lower(): c for c in df_base.columns}
-            col_contratista = None
-            for candidata in ["contratista", "contratista ", "nombre_contratista"]:
-                if candidata in cols_norm:
-                    col_contratista = cols_norm[candidata]
-                    break
-
-            if col_contratista:
-                contratista_sel = st.selectbox(
-                    "Filtrar por contratista (base general)",
-                    ["(Todos)"] + sorted(df_base[col_contratista].dropna().astype(str).unique().tolist()),
-                )
-
-                if contratista_sel != "(Todos)":
-                    st.dataframe(
-                        formatear_numeros_df(df_base[df_base[col_contratista].astype(str) == str(contratista_sel)]),
-                        use_container_width=True,
-                    )
-            else:
-                st.warning(f"No se encontró columna de contratista. Columnas: {list(df_base.columns)}")
-
-    carpeta_resumen_mes = os.path.join(BASE_ROOT, proyecto, "control_actas", "resumen", nombre_carpeta_mes)
-    resumen_mes_path = os.path.join(carpeta_resumen_mes, f"resumen_{nombre_carpeta_mes}.xlsx")
-
-    if os.path.exists(resumen_mes_path):
-        with col_b:
-            st.markdown(f"#### Resumen mensual ({mes.capitalize()} {anio_proyecto})")
-            try:
-                df_resumen = pd.read_excel(resumen_mes_path, sheet_name="RESUMEN")
-                st.dataframe(formatear_numeros_df(df_resumen), use_container_width=True)
-            except Exception as e:
-                st.error(f"No se pudo leer el resumen mensual: {e}")
-    else:
-        col_b.info("Aún no hay resumen mensual generado para este periodo.")
-
-    st.markdown("#### Totales por contratista (Cantidades)")
-    try:
-        df_cat = pd.read_excel(resumen_mes_path, sheet_name="CANTIDADES")
-        st.dataframe(formatear_numeros_df(df_cat), use_container_width=True)
-    except Exception:
-        st.info("No existe aún la hoja 'CANTIDADES'. Ejecuta el proceso.")
-
-
-# ==================================================
-# TAB 3: Looker
-# ==================================================
-with tab_informes:
-    st.subheader(f"Dashboard del proyecto: {proyecto}")
-    url_dashboard = LOOKER_LINKS.get(proyecto)
-    if url_dashboard:
-        st.link_button("Abrir Dashboard en Looker Studio", url_dashboard)
-    else:
-        st.warning("No hay un dashboard configurado para este proyecto.")
-
-
-# ==================================================
-# TAB 4: Bases de precios
-# ==================================================
-with tab_based:
-    st.subheader("📂 Base de datos en uso")
-    ruta_bd = st.session_state.get("db_precios_path")
-
-    if not ruta_bd:
-        st.caption("No hay BD cargada (o estás en modo crítico / falló la carga).")
-    else:
-        carpeta = os.path.basename(os.path.dirname(ruta_bd))
-        archivo = os.path.basename(ruta_bd)
-        st.markdown(f"**Archivo activo:** {carpeta}/{archivo}")
-        if VISTA == "SUBCONTRATOS":
-            st.caption("Modo Subcontratos: esta BD se usa como SOLO LECTURA.")
-        else:
-            st.caption("Modo Oficina: BD accesible según permisos del entorno (Drive).")
-
-    if modo_backend == "normal":
-        st.caption("Esto muestra EXACTAMENTE lo que estás usando en modo NORMAL: valores_referencia.")
-        if not valores_referencia:
-            st.warning("valores_referencia está vacío.")
-        else:
-            if isinstance(valores_referencia, dict):
-                df_bn = pd.DataFrame([{"actividad": k, "precio": v} for k, v in valores_referencia.items()])
-                st.dataframe(formatear_numeros_df(df_bn), use_container_width=True, hide_index=True)
-                st.caption(f"Registros: {len(df_bn)}")
-            else:
-                st.info("valores_referencia no es dict. Muestro tal cual:")
-                st.write(valores_referencia)
-
-
-
-
-
-
-
-
-
-
+                    st.warning("No
 
 
