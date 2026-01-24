@@ -341,10 +341,28 @@ def revisar_acta(
         #  MODO NORMAL: BD (lookup exacto)
         # ==========================================
         else:
-            if not unidad:
+            # === MODO NORMAL: lookup robusto (acepta dict con llave str o tupla) ===
+            if not valores_referencia:
+                debug["sin_valor_referencia"] += 1
                 continue
-            key = (desc_norm, unidad)
-            valor_ref = valores_referencia.get(key)
+        
+            valor_ref = None
+        
+            # 1) Caso "nuevo": dict[(desc_norm, unidad)] = precio
+            if unidad:
+                valor_ref = valores_referencia.get((desc_norm, unidad))
+        
+            # 2) Caso "actual tuyo": dict["actividad"] = precio
+            if valor_ref is None:
+                # intenta con la descripción normalizada
+                valor_ref = valores_referencia.get(desc_norm)
+        
+            # 3) Fallbacks por si en BD quedó guardado con mayúsculas / sin normalizar
+            if valor_ref is None:
+                valor_ref = valores_referencia.get(descripcion.strip())
+            if valor_ref is None:
+                valor_ref = valores_referencia.get(descripcion.strip().upper())
+        
             if valor_ref is None:
                 debug["sin_valor_referencia"] += 1
                 continue
@@ -405,6 +423,7 @@ def revisar_acta(
     
     wb.save(nombre_salida)
     print(f"✔ Revisado: {os.path.basename(path_archivo)}")
+
 
 
 
