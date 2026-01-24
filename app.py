@@ -704,7 +704,6 @@ if VISTA == "SUBCONTRATOS":
                 except Exception:
                     pass
             st.caption(f"📥 Actas listas para procesar, se encontraton: {copiados} archivo(s)")
-            st.caption(f"📥 Archivos procesados para descarga local: {copiados}")
 
             with st.spinner("Procesando actas subidas..."):
                 info_sub = correr_todo(
@@ -716,7 +715,8 @@ if VISTA == "SUBCONTRATOS":
                 )
     
             st.session_state["info_subcontratos"] = info_sub
-            st.success("✅ Proceso terminado (Subcontratos).")
+            st.success("✅ Proceso terminado.")
+            st.caption(f"📥 Archivos procesados para descarga local: {copiados}")
 
     info_sub = st.session_state.get("info_subcontratos")
     if info_sub:
@@ -1010,6 +1010,7 @@ with tab_based:
             else:
                 st.info("valores_referencia no es dict. Muestro tal cual:")
                 st.write(valores_referencia)
+
 
 
 
