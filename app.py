@@ -303,7 +303,7 @@ def render_subcontratos_uploader():
     with col1:
         up = st.file_uploader("Subir archivo", type=["zip", "xlsx"], accept_multiple_files=False)
 
-    with col2:
+    #with col2:
         if st.button("🧹 Limpiar carga"):
             _reset_local_inputs()
             st.info("Carga local limpiada.")
@@ -1010,6 +1010,7 @@ with tab_based:
             else:
                 st.info("valores_referencia no es dict. Muestro tal cual:")
                 st.write(valores_referencia)
+
 
 
 
