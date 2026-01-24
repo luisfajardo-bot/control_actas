@@ -78,90 +78,91 @@ def revisar_acta(
 
     col_cantidad = "I"
 
-for fila in range(10, ws.max_row + 1):
-    item = str(ws[f"{col_item}{fila}"].value or "").strip()
-    desc_raw = ws[f"{col_desc}{fila}"].value
-    un = ws[f"{col_un}{fila}"].value
+    for fila in range(10, ws.max_row + 1):
+        item = str(ws[f"{col_item}{fila}"].value or "").strip()
+        desc_raw = ws[f"{col_desc}{fila}"].value
+        un = ws[f"{col_un}{fila}"].value
+    
+        if not item or not desc_raw:
+            continue
+    
+        descripcion = str(desc_raw).strip()
+        desc_norm = normalizar(descripcion)
+    
+        # Filtros
+        if "MANO DE OBRA" in desc_norm or "PEA" in desc_norm:
+            continue
+    
+        # ✅ CANTIDAD: leerla SIEMPRE para conteo (no depende de crítico)
+        # Usa encabezado si existe; si no, cae a tu col_cantidad existente
+        col_cant_eff = columnas.get("CANTIDAD", None) or col_cantidad
+    
+        try:
+            cantidad = float(ws_vals[f"{col_cant_eff}{fila}"].value)
+        except Exception:
+            cantidad = 0
+    
+        # ✅ sumar cantidades por categoría (aunque NO sea crítica)
+        if cantidad and not math.isnan(cantidad):
+            if "EXCAV" in desc_norm:
+                totales_cant["Excavaciones"] += float(cantidad)
+            if "RELLEN" in desc_norm:
+                totales_cant["Rellenos"] += float(cantidad)
+            if re.search(r"\bMR\b", desc_norm):
+                totales_cant["Concreto MR"] += float(cantidad)
+            if "ESTAMP" in desc_norm:
+                totales_cant["Concreto estampado"] += float(cantidad)
+    
+        # ==============================
+        # Desde aquí: lógica de CRÍTICO (precios)
+        # ==============================
+    
+        # Buscar actividad crítica por `in`
+        precio_ref = None
+        for k_norm, precio in CRITICOS_NORM.items():
+            if k_norm in desc_norm:
+                precio_ref = precio
+                break
+    
+        if precio_ref is None:
+            continue
+    
+        # Leer valor unitario
+        try:
+            valor = float(
+                str(ws_vals[f"{col_valor}{fila}"].value)
+                .replace("$", "")
+                .replace(",", "")
+            )
+        except Exception:
+            continue
+    
+        # Si no hay cantidad válida, no registramos error (pero ya contamos arriba)
+        if (not cantidad) or math.isnan(cantidad):
+            continue
+    
+        celda_valor = ws[f"{col_valor}{fila}"]
+        diff = valor - precio_ref
+    
+        if abs(diff) > 1:
+            if diff > 0:
+                celda_valor.font = Font(color="FFFF0000")  # rojo
+            else:
+                celda_valor.font = Font(color="FF0000FF")  # azul
+    
+            base_registro.append({
+                "anio": anio_actual,
+                "mes": mes_nombre,
+                "archivo": os.path.basename(path_archivo),
+                "contratista": nombre_contratista,
+                "item": item,
+                "descripcion": descripcion,
+                "valor_unitario_original": valor,
+                "un": un,
+                "valor_pactado": precio_ref,
+                "cantidad_presenta": cantidad,
+                "valor_ajustado": precio_ref * cantidad,
+            })
 
-    if not item or not desc_raw:
-        continue
-
-    descripcion = str(desc_raw).strip()
-    desc_norm = normalizar(descripcion)
-
-    # Filtros
-    if "MANO DE OBRA" in desc_norm or "PEA" in desc_norm:
-        continue
-
-    # ✅ CANTIDAD: leerla SIEMPRE para conteo (no depende de crítico)
-    # Usa encabezado si existe; si no, cae a tu col_cantidad existente
-    col_cant_eff = columnas.get("CANTIDAD", None) or col_cantidad
-
-    try:
-        cantidad = float(ws_vals[f"{col_cant_eff}{fila}"].value)
-    except Exception:
-        cantidad = 0
-
-    # ✅ sumar cantidades por categoría (aunque NO sea crítica)
-    if cantidad and not math.isnan(cantidad):
-        if "EXCAV" in desc_norm:
-            totales_cant["Excavaciones"] += float(cantidad)
-        if "RELLEN" in desc_norm:
-            totales_cant["Rellenos"] += float(cantidad)
-        if re.search(r"\bMR\b", desc_norm):
-            totales_cant["Concreto MR"] += float(cantidad)
-        if "ESTAMP" in desc_norm:
-            totales_cant["Concreto estampado"] += float(cantidad)
-
-    # ==============================
-    # Desde aquí: lógica de CRÍTICO (precios)
-    # ==============================
-
-    # Buscar actividad crítica por `in`
-    precio_ref = None
-    for k_norm, precio in CRITICOS_NORM.items():
-        if k_norm in desc_norm:
-            precio_ref = precio
-            break
-
-    if precio_ref is None:
-        continue
-
-    # Leer valor unitario
-    try:
-        valor = float(
-            str(ws_vals[f"{col_valor}{fila}"].value)
-            .replace("$", "")
-            .replace(",", "")
-        )
-    except Exception:
-        continue
-
-    # Si no hay cantidad válida, no registramos error (pero ya contamos arriba)
-    if (not cantidad) or math.isnan(cantidad):
-        continue
-
-    celda_valor = ws[f"{col_valor}{fila}"]
-    diff = valor - precio_ref
-
-    if abs(diff) > 1:
-        if diff > 0:
-            celda_valor.font = Font(color="FFFF0000")  # rojo
-        else:
-            celda_valor.font = Font(color="FF0000FF")  # azul
-
-        base_registro.append({
-            "anio": anio_actual,
-            "mes": mes_nombre,
-            "archivo": os.path.basename(path_archivo),
-            "contratista": nombre_contratista,
-            "item": item,
-            "descripcion": descripcion,
-            "valor_unitario_original": valor,
-            "un": un,
-            "valor_pactado": precio_ref,
-            "cantidad_presenta": cantidad,
-            "valor_ajustado": precio_ref * cantidad,
-        })
 
 
