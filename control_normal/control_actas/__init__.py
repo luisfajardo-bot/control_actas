@@ -1,5 +1,5 @@
 # control_actas/__init__.py
-from .config import BASE_ROOT, PROYECTO_DEFAULT
+from .config import PROYECTO_DEFAULT
 from .meses import listar_carpetas_mes
 from .pipeline_mes import correr_todo, correr_todos_los_meses
 
@@ -11,3 +11,4 @@ __all__ = [
     "correr_todos_los_meses",
 
 ]
+
