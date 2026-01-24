@@ -557,7 +557,7 @@ st.markdown(
 
 if VISTA == "SUBCONTRATOS":
     render_subcontratos_uploader()
-    st.info("🧩 Nota: la carga ya queda lista en st.session_state['local_inputs_dir'].")
+
 
 # ==================================================
 # Carga BD precios (NORMAL)
@@ -625,79 +625,49 @@ if not modo_critico:
 # ==================================================
 if VISTA == "SUBCONTRATOS":
     st.markdown("---")
-    st.subheader("🧰 Subcontratos: ejecución y salida (sin Drive)")
+    st.subheader("🧰 Subcontratos: ejecución y salida en máquina local")
 
     # ✅ Botón para limpiar TODO lo anterior (solo subcontratos)
     colx1, colx2 = st.columns([1, 3])
     with colx1:
         if st.button("🧹 Limpiar resultados Subcontratos"):
             _limpiar_estado_subcontratos()
-            st.success("Listo. Resultados anteriores borrados (Subcontratos).")
+            st.success("Los resultados anteriores han sido borrados")
             st.rerun()
-    with colx2:
-        st.caption("Cada procesamiento crea un sandbox temporal nuevo (no se mezcla con ejecuciones anteriores).")
 
-    local_dir = st.session_state.get("local_inputs_dir")
-    if not local_dir or not os.path.exists(local_dir):
-        st.warning("Primero sube un .zip o un .xlsx en la sección de carga.")
-        st.stop()
-
-    # ✅ Generar un ID único por ejecución y crear un proyecto/sandbox nuevo
-    # Esto evita que se mezclen bases o salidas de subcontratos entre runs.
-    if "sub_run_id" not in st.session_state:
-        st.session_state["sub_run_id"] = _sub_run_id()
-
-    sub_run_id = st.session_state["sub_run_id"]
-    proyecto_sub = f"{proyecto}__SUBCONTRATOS__{sub_run_id}"
-    st.session_state["sub_proyecto"] = proyecto_sub
-
-    carpeta_destino = Path(BASE_ROOT) / proyecto_sub / "control_actas" / "actas" / nombre_carpeta_mes
-    carpeta_destino.mkdir(parents=True, exist_ok=True)
-    st.session_state["sub_destino"] = str(carpeta_destino)
-
-    # ✅ Copiar xlsx del upload a carpeta destino (solo para esta ejecución)
-    src_paths = list(Path(local_dir).rglob("*.xlsx"))
-    src_paths = [p for p in src_paths if p.is_file() and not p.name.startswith("~$")]
-
-    if not src_paths:
-        st.error("No encontré .xlsx dentro de lo que subiste.")
-        st.stop()
-
-    # Limpiar carpeta destino (por si el usuario re-procesa dentro del mismo run_id)
-    for f in carpeta_destino.glob("*.xlsx"):
-        try:
-            f.unlink()
-        except Exception:
-            pass
-
-    copiados = 0
-    for p in src_paths:
-        try:
-            shutil.copy2(p, carpeta_destino / p.name)
-            copiados += 1
-        except Exception:
-            pass
-
-    st.caption(f"📥 Actas listas para procesar (solo subidas): {copiados} archivos")
-    st.caption(f"🔎 Backend leerá (sandbox temporal): {carpeta_destino}")
-
-    # ✅ Cada vez que procesas: borrar resultados previos y crear un sandbox NUEVO
-    if st.button("🚀 Procesar actas subidas (Subcontratos)"):
-        # 1) borrar resultados anteriores
-        if "info_subcontratos" in st.session_state:
-            del st.session_state["info_subcontratos"]
-
-        # 2) regenerar run_id para sandbox NUEVO (bases y outputs limpios)
-        st.session_state["sub_run_id"] = _sub_run_id()
+        local_dir = st.session_state.get("local_inputs_dir")
+        if not local_dir or not os.path.exists(local_dir):
+            st.warning("Primero sube un .zip o un .xlsx en la sección de carga.")
+            st.stop()
+    
+        # ✅ Generar un ID único por ejecución y crear un proyecto/sandbox nuevo
+        # Esto evita que se mezclen bases o salidas de subcontratos entre runs.
+        if "sub_run_id" not in st.session_state:
+            st.session_state["sub_run_id"] = _sub_run_id()
+    
         sub_run_id = st.session_state["sub_run_id"]
         proyecto_sub = f"{proyecto}__SUBCONTRATOS__{sub_run_id}"
         st.session_state["sub_proyecto"] = proyecto_sub
-
+    
         carpeta_destino = Path(BASE_ROOT) / proyecto_sub / "control_actas" / "actas" / nombre_carpeta_mes
         carpeta_destino.mkdir(parents=True, exist_ok=True)
         st.session_state["sub_destino"] = str(carpeta_destino)
-
-        # copiar de nuevo (mismo upload) a este sandbox nuevo
+    
+        # ✅ Copiar xlsx del upload a carpeta destino (solo para esta ejecución)
+        src_paths = list(Path(local_dir).rglob("*.xlsx"))
+        src_paths = [p for p in src_paths if p.is_file() and not p.name.startswith("~$")]
+    
+        if not src_paths:
+            st.error("No encontré archivos válidos (.xlsx) dentro de lo que subiste.")
+            st.stop()
+    
+        # Limpiar carpeta destino (por si el usuario re-procesa dentro del mismo run_id)
+        for f in carpeta_destino.glob("*.xlsx"):
+            try:
+                f.unlink()
+            except Exception:
+                pass
+    
         copiados = 0
         for p in src_paths:
             try:
@@ -705,9 +675,37 @@ if VISTA == "SUBCONTRATOS":
                 copiados += 1
             except Exception:
                 pass
+    
+        st.caption(f"📥 Actas listas para procesar, se encontraton: {copiados} archivo(s)")
 
-        st.caption(f"🧪 Sandbox nuevo creado: {proyecto_sub}")
-        st.caption(f"📥 Copiados a sandbox: {copiados} archivos")
+    with colx2:
+        # ✅ Cada vez que procesas: borrar resultados previos y crear un sandbox NUEVO
+        if st.button("🚀 Procesar actas subidas (Subcontratos)"):
+            # 1) borrar resultados anteriores
+            if "info_subcontratos" in st.session_state:
+                del st.session_state["info_subcontratos"]
+    
+            # 2) regenerar run_id para sandbox NUEVO (bases y outputs limpios)
+            st.session_state["sub_run_id"] = _sub_run_id()
+            sub_run_id = st.session_state["sub_run_id"]
+            proyecto_sub = f"{proyecto}__SUBCONTRATOS__{sub_run_id}"
+            st.session_state["sub_proyecto"] = proyecto_sub
+    
+            carpeta_destino = Path(BASE_ROOT) / proyecto_sub / "control_actas" / "actas" / nombre_carpeta_mes
+            carpeta_destino.mkdir(parents=True, exist_ok=True)
+            st.session_state["sub_destino"] = str(carpeta_destino)
+    
+            # copiar de nuevo (mismo upload) a este sandbox nuevo
+            copiados = 0
+            for p in src_paths:
+                try:
+                    shutil.copy2(p, carpeta_destino / p.name)
+                    copiados += 1
+                except Exception:
+                    pass
+    
+            st.caption(f"🧪 Sandbox nuevo creado: {proyecto_sub}")
+            st.caption(f"📥 Copiados a sandbox: {copiados} archivos")
 
         with st.spinner("Procesando actas subidas..."):
             info_sub = correr_todo(
@@ -1013,6 +1011,7 @@ with tab_based:
             else:
                 st.info("valores_referencia no es dict. Muestro tal cual:")
                 st.write(valores_referencia)
+
 
 
 
