@@ -701,6 +701,77 @@ with tab_run:
 with tab_resumen:
     st.subheader("Resúmenes y registros")
     col_a, col_b = st.columns(2)
+        # -----------------------------
+    # SOLO TAB RESÚMENES (Cloud): traer archivos desde Drive a /tmp
+    # -----------------------------
+    IS_CLOUD = "STREAMLIT_RUNTIME" in os.environ or "DRIVE_ROOT_FOLDER_ID" in st.secrets
+
+    def _drive_folder_path_to_id(service, root_id: str, parts: list[str]) -> str | None:
+        cur = root_id
+        for name in parts:
+            nxt = find_child_folder(service, cur, name)
+            if not nxt:
+                return None
+            cur = nxt
+        return cur
+
+    def _download_if_exists(service, folder_id: str, filename: str, local_path: str) -> bool:
+        fid = find_file(service, folder_id, filename)
+        if not fid:
+            return False
+        Path(local_path).parent.mkdir(parents=True, exist_ok=True)
+        download_file(service, fid, local_path)
+        return True
+
+    def _list_names(service, folder_id: str) -> list[str]:
+        try:
+            items = list_files_in_folder(service, folder_id)
+            return [it.get("name", "") for it in items]
+        except Exception:
+            return []
+
+    # Rutas locales (filesystem) que ya usa tu código
+    base_general_path = os.path.join(BASE_ROOT, proyecto, "control_actas", "datos", "base_general.xlsx")
+    carpeta_resumen_mes = os.path.join(BASE_ROOT, proyecto, "control_actas", "resumen", nombre_carpeta_mes)
+    resumen_mes_path = os.path.join(carpeta_resumen_mes, f"resumen_{nombre_carpeta_mes}.xlsx")
+
+    # Si estamos en Cloud, intentamos bajar desde Drive ANTES de leer
+    if IS_CLOUD:
+        try:
+            service = get_drive_service()
+            root_id = st.secrets["DRIVE_ROOT_FOLDER_ID"]
+
+            # 1) base_general.xlsx
+            datos_folder_id = _drive_folder_path_to_id(
+                service, root_id, [proyecto, "control_actas", "datos"]
+            )
+            if datos_folder_id:
+                _download_if_exists(service, datos_folder_id, "base_general.xlsx", base_general_path)
+
+            # 2) resumen mensual
+            resumen_folder_id = _drive_folder_path_to_id(
+                service, root_id, [proyecto, "control_actas", "resumen", nombre_carpeta_mes]
+            )
+            if resumen_folder_id:
+                _download_if_exists(service, resumen_folder_id, f"resumen_{nombre_carpeta_mes}.xlsx", resumen_mes_path)
+
+            # Mini panel: qué hay disponible en Drive (para debug visual)
+            with st.expander("📦 Debug Drive (solo Ver resúmenes)", expanded=False):
+                st.write("**Ruta Drive base_general:**", f"{proyecto}/control_actas/datos/base_general.xlsx")
+                if datos_folder_id:
+                    st.write("Archivos en datos:", _list_names(service, datos_folder_id))
+                else:
+                    st.warning("No encontré la carpeta Drive: proyecto/control_actas/datos")
+
+                st.write("**Ruta Drive resumen mensual:**", f"{proyecto}/control_actas/resumen/{nombre_carpeta_mes}/resumen_{nombre_carpeta_mes}.xlsx")
+                if resumen_folder_id:
+                    st.write("Archivos en resumen_mes:", _list_names(service, resumen_folder_id))
+                else:
+                    st.warning("No encontré la carpeta Drive: proyecto/control_actas/resumen/<mes><año>")
+
+        except Exception as e:
+            st.warning(f"No pude sincronizar resúmenes desde Drive: {e}")
+
 
     base_general_path = os.path.join(BASE_ROOT, proyecto, "control_actas", "datos", "base_general.xlsx")
 
@@ -804,6 +875,7 @@ with tab_based:
             else:
                 st.info("valores_referencia no es dict. Muestro tal cual:")
                 st.write(valores_referencia)
+
 
 
 
