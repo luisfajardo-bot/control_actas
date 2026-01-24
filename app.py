@@ -707,17 +707,17 @@ if VISTA == "SUBCONTRATOS":
             st.caption(f"🧪 Sandbox nuevo creado: {proyecto_sub}")
             st.caption(f"📥 Copiados a sandbox: {copiados} archivos")
 
-        with st.spinner("Procesando actas subidas..."):
-            info_sub = correr_todo(
-                BASE_ROOT,
-                proyecto_sub,
-                nombre_carpeta_mes,
-                valores_referencia,
-                modo_critico=modo_critico,
-            )
-
-        st.session_state["info_subcontratos"] = info_sub
-        st.success("✅ Proceso terminado (Subcontratos).")
+            with st.spinner("Procesando actas subidas..."):
+                info_sub = correr_todo(
+                    BASE_ROOT,
+                    proyecto_sub,
+                    nombre_carpeta_mes,
+                    valores_referencia,
+                    modo_critico=modo_critico,
+                )
+    
+            st.session_state["info_subcontratos"] = info_sub
+            st.success("✅ Proceso terminado (Subcontratos).")
 
     info_sub = st.session_state.get("info_subcontratos")
     if info_sub:
@@ -1011,6 +1011,7 @@ with tab_based:
             else:
                 st.info("valores_referencia no es dict. Muestro tal cual:")
                 st.write(valores_referencia)
+
 
 
 
