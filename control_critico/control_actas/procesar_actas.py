@@ -89,15 +89,7 @@ def revisar_acta(
         descripcion = str(desc_raw).strip()
         desc_norm = normalizar(descripcion)
 
-        # ✅ sumar cantidades por categoría (keyword directo)
-        if "EXCAV" in desc_norm:
-            totales_cant["Excavaciones"] += float(cantidad)
-        if "RELLEN" in desc_norm:
-            totales_cant["Rellenos"] += float(cantidad)
-        if re.search(r"\bMR\b", desc_norm):
-            totales_cant["Concreto MR"] += float(cantidad)
-        if "ESTAMP" in desc_norm:
-            totales_cant["Concreto estampado"] += float(cantidad)
+
 
         # Filtros
         if "MANO DE OBRA" in desc_norm or "PEA" in desc_norm:
@@ -131,7 +123,15 @@ def revisar_acta(
         if cantidad == 0 or math.isnan(cantidad):
             continue
         
-        
+        # ✅ sumar cantidades por categoría (keyword directo)
+        if "EXCAV" in desc_norm:
+            totales_cant["Excavaciones"] += float(cantidad)
+        if "RELLEN" in desc_norm:
+            totales_cant["Rellenos"] += float(cantidad)
+        if re.search(r"\bMR\b", desc_norm):
+            totales_cant["Concreto MR"] += float(cantidad)
+        if "ESTAMP" in desc_norm:
+            totales_cant["Concreto estampado"] += float(cantidad)
 
 
 
@@ -178,6 +178,7 @@ def revisar_acta(
         })
 
     wb.save(salida)
+
 
 
 
