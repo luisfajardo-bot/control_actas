@@ -188,6 +188,26 @@ def formatear_numeros_df(df: pd.DataFrame) -> pd.DataFrame:
             df_fmt[col] = df_fmt[col].apply(lambda x: f"{x:,.2f}" if pd.notnull(x) else x)
     return df_fmt
 
+def zip_outputs(info: dict) -> bytes:
+    """
+    Empaqueta en un ZIP en memoria:
+    - carpeta_salida_mes (verificados)
+    - carpeta_resumen_mes (resúmenes)
+    - carpeta_datos (base_general.xlsx, etc.)
+    """
+    import io
+    bio = io.BytesIO()
+    with zipfile.ZipFile(bio, "w", compression=zipfile.ZIP_DEFLATED) as z:
+        for k in ["carpeta_salida_mes", "carpeta_resumen_mes", "carpeta_datos"]:
+            p = Path(info.get(k, ""))
+            if p and p.exists():
+                for f in p.rglob("*"):
+                    if f.is_file():
+                        # mete dentro del zip con carpeta raíz = nombre lógico
+                        arc = f"{k}/{f.relative_to(p)}"
+                        z.write(f, arcname=str(arc))
+    return bio.getvalue()
+
 
 def _init_state():
     if "vista" not in st.session_state:
@@ -528,6 +548,119 @@ if VISTA == "SUBCONTRATOS":
     st.info("🧩 Nota: la carga ya queda lista en st.session_state['local_inputs_dir'].")
 
 # ==================================================
+# SUBCONTRATOS: ejecutar SOLO con archivos subidos (sin Drive)
+# ==================================================
+if VISTA == "SUBCONTRATOS":
+    st.markdown("---")
+    st.subheader("🧰 Subcontratos: ejecución y salida (sin Drive)")
+
+    # 1) validar que exista carga
+    local_dir = st.session_state.get("local_inputs_dir")
+    if not local_dir or not os.path.exists(local_dir):
+        st.warning("Primero sube un .zip o un .xlsx en la sección de carga.")
+        st.stop()
+
+    # 2) preparar carpeta EXACTA que el backend ya usa
+    # backend espera: BASE_ROOT / proyecto / control_actas / actas / nombre_carpeta_mes
+    proyecto_sub = f"{proyecto}__SUBCONTRATOS"
+    carpeta_destino = Path(BASE_ROOT) / proyecto_sub / "control_actas" / "actas" / nombre_carpeta_mes
+    carpeta_destino.mkdir(parents=True, exist_ok=True)
+
+    # 3) copiar los xlsx subidos a carpeta_destino (limpia antes para que sea “solo lo subido”)
+    #    OJO: no toca Drive, solo filesystem temporal
+    for f in carpeta_destino.glob("*.xlsx"):
+        try:
+            f.unlink()
+        except Exception:
+            pass
+
+    src_paths = list(Path(local_dir).rglob("*.xlsx"))
+    src_paths = [p for p in src_paths if p.is_file() and not p.name.startswith("~$")]
+
+    if not src_paths:
+        st.error("No encontré .xlsx dentro de lo que subiste.")
+        st.stop()
+
+    copiados = 0
+    for p in src_paths:
+        try:
+            shutil.copy2(p, carpeta_destino / p.name)
+            copiados += 1
+        except Exception:
+            pass
+
+    st.caption(f"📥 Actas listas para procesar (solo subidas): {copiados} archivos")
+    st.caption(f"🔎 Backend leerá: {carpeta_destino}")
+
+    # 4) Botón propio de subcontratos (no usa el botón global de sidebar)
+    if st.button("🚀 Procesar actas subidas (Subcontratos)"):
+        with st.spinner("Procesando actas subidas..."):
+            info_sub = correr_todo(
+                BASE_ROOT,
+                proyecto_sub,
+                nombre_carpeta_mes,
+                valores_referencia,
+                modo_critico=modo_critico,
+            )
+        st.session_state["info_subcontratos"] = info_sub
+        st.success("✅ Proceso terminado (Subcontratos).")
+
+    # 5) Si ya hay resultados, mostrar 2 tabs: Resultados + Descargas
+    info_sub = st.session_state.get("info_subcontratos")
+    if info_sub:
+        tab_r, tab_d = st.tabs(["📊 Resultados (Subcontratos)", "⬇️ Descargas (Subcontratos)"])
+
+        with tab_r:
+            st.markdown("### Resumen y bases (solo archivos subidos)")
+
+            base_general_path = Path(info_sub["carpeta_datos"]) / "base_general.xlsx"
+            resumen_mes_path = Path(info_sub["carpeta_resumen_mes"]) / f"resumen_{nombre_carpeta_mes}.xlsx"
+
+            if base_general_path.exists():
+                df_base = pd.read_excel(base_general_path)
+                st.markdown("#### Base general")
+                st.dataframe(formatear_numeros_df(df_base.tail(300)), width="stretch")
+            else:
+                st.info("No encontré base_general.xlsx en la salida.")
+
+            if resumen_mes_path.exists():
+                try:
+                    df_resumen = pd.read_excel(resumen_mes_path, sheet_name="RESUMEN")
+                    st.markdown("#### Resumen mensual")
+                    st.dataframe(formatear_numeros_df(df_resumen), width="stretch")
+                except Exception as e:
+                    st.warning(f"No pude leer RESUMEN del resumen mensual: {e}")
+
+                try:
+                    df_cat = pd.read_excel(resumen_mes_path, sheet_name="CANTIDADES")
+                    st.markdown("#### Cantidades por contratista")
+                    st.dataframe(formatear_numeros_df(df_cat), width="stretch")
+                except Exception:
+                    st.info("No existe aún la hoja 'CANTIDADES' en este resumen.")
+            else:
+                st.info("No encontré resumen mensual en la salida.")
+
+            with st.expander("Ver rutas generadas (Subcontratos)"):
+                st.json(info_sub)
+
+        with tab_d:
+            st.markdown("### Descarga de archivos de salida")
+            zip_bytes = zip_outputs(info_sub)
+
+            st.download_button(
+                "📦 Descargar ZIP (verificados + bases + resúmenes)",
+                data=zip_bytes,
+                file_name=f"salidas_subcontratos_{proyecto}_{nombre_carpeta_mes}_{modo_backend}.zip",
+                mime="application/zip",
+            )
+
+            st.caption("Incluye: carpeta_salida_mes (verificados), carpeta_resumen_mes, carpeta_datos.")
+
+    # IMPORTANTÍSIMO: cortar aquí para no mezclar con el flujo OFICINA
+    st.stop()
+
+
+# ==================================================
 # Carga BD precios (NORMAL)
 # ==================================================
 valores_referencia = {}
@@ -826,6 +959,7 @@ with tab_based:
             else:
                 st.info("valores_referencia no es dict. Muestro tal cual:")
                 st.write(valores_referencia)
+
 
 
 
