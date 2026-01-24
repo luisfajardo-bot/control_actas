@@ -150,7 +150,9 @@ def correr_revision_desde_uploads_normal(
         else:
             resumen_df = pd.DataFrame(columns=["contratista", "Items_con_error", "Valor_ajustado_total"])
 
-        # Guardar exactamente los mismos archivos “principales”
+        # ===============================
+        # Guardar archivos de salida
+        # ===============================
         base_general_path = out_dir / "base_general.xlsx"
         base_cant_path = out_dir / "base_cantidades.xlsx"
         resumen_path = out_dir / "resumen.xlsx"
@@ -159,10 +161,14 @@ def correr_revision_desde_uploads_normal(
         base_cantidades_df.to_excel(base_cant_path, index=False)
         resumen_df.to_excel(resumen_path, index=False)
 
+        # ===============================
+        # Crear ZIP con todos los outputs
+        # ===============================
         zip_bytes = _zip_dir_to_bytes(out_dir)
 
-        # IMPORTANTE: como el TemporaryDirectory se borra al salir,
-        # devolvemos también los bytes del zip y copias de los dfs (ya en memoria).
+        # ===============================
+        # Retorno al frontend (app.py)
+        # ===============================
         return {
             "base_general_df": base_general_df,
             "base_cantidades_df": base_cantidades_df,
@@ -170,3 +176,4 @@ def correr_revision_desde_uploads_normal(
             "zip_bytes": zip_bytes,
             "archivos_procesados": [p.name for p in xlsx_paths],
         }
+
