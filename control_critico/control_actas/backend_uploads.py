@@ -97,24 +97,30 @@ def correr_revision_desde_uploads_critico(
                 base_cantidades=base_cantidades,
             )
 
-        base_general_df = pd.DataFrame(base_registro)
-        base_cantidades_df = pd.DataFrame(base_cantidades)
+        # ===============================
+        # Guardar archivos de salida
+        # ===============================
+        base_general_path = out_dir / "base_general.xlsx"
+        base_cant_path = out_dir / "base_cantidades.xlsx"
+        resumen_path = out_dir / "resumen.xlsx"
 
-        if not base_general_df.empty:
-            resumen_df = (
-                base_general_df
-                .groupby(["contratista"], dropna=False)
-                .agg(
-                    Items_con_error=("item", "count"),
-                    Valor_ajustado_total=("valor_ajustado", "sum"),
-                )
-                .reset_index()
-                .sort_values("Items_con_error", ascending=False)
-            )
-        else:
-            resumen_df = pd.DataFrame(columns=["contratista", "Items_con_error", "Valor_ajustado_total"])
+        base_general_df.to_excel(base_general_path, index=False)
+        base_cantidades_df.to_excel(base_cant_path, index=False)
+        resumen_df.to_excel(resumen_path, index=False)
 
-        # Guardar archivos “principales”
-        (out_dir / "base_general.xlsx").write_bytes(
-            base_general_df.to_excel(index=False, engine="openpyxl")  # OJO: esto no funciona así
-        )
+        # ===============================
+        # Crear ZIP con todos los outputs
+        # ===============================
+        zip_bytes = _zip_dir_to_bytes(out_dir)
+
+        # ===============================
+        # Retorno al frontend (app.py)
+        # ===============================
+        return {
+            "base_general_df": base_general_df,
+            "base_cantidades_df": base_cantidades_df,
+            "resumen_df": resumen_df,
+            "zip_bytes": zip_bytes,
+            "archivos_procesados": [p.name for p in xlsx_paths],
+        }
+
