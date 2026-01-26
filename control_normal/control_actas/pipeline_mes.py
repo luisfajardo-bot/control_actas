@@ -29,7 +29,7 @@ def correr_todo(base_root: str, proyecto: str, nombre_carpeta_mes: str, valores_
         os.makedirs(ruta, exist_ok=True)
 
     base_registro = []
-    base_cantidades = []   # ✅ NUEVA
+    base_cantidades = []   
 
 
     for archivo in os.listdir(carpeta_mes):
@@ -171,4 +171,5 @@ def correr_todos_los_meses(base_root: str, proyecto: str, valores_referencia: di
 
     print(f"\n✅ Procesados {len(resultados)} meses para el proyecto '{proyecto}'.")
     return resultados
+
 
