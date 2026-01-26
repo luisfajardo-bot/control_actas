@@ -94,8 +94,8 @@ def _extraer_cantidades_por_familia(ws_vals, columnas: dict) -> dict[str, list[d
     """
     col_item = columnas.get("ÍTEM", "A")
     col_desc = columnas.get("DESCRIPCIÓN", "B")
-    col_un = columnas.get("UN", "D")
-    col_cantidad = "I"  # fija según tu archivo
+    col_un = columnas.get("UN", "C")      # ✅ NUEVO FORMATO: UN = C
+    col_cantidad = "G"                   # ✅ NUEVO FORMATO: CANTIDAD = G
 
     out: dict[str, list[dict]] = {
         "RELLENOS": [],
@@ -205,14 +205,12 @@ def revisar_acta(
                 break
 
         if not hoja_corte:
-            print(f"❌ No se encontró hoja CORTE en {path_archivo}")
             return
 
         ws = wb[hoja_corte]
         ws_vals = wb_vals[hoja_corte]
 
-    except Exception as e:
-        print(f"❌ Error abriendo {path_archivo}: {e}")
+    except Exception:
         return
 
     nombre_contratista = ws["C6"].value or ws["D6"].value or "SIN NOMBRE"
@@ -228,14 +226,18 @@ def revisar_acta(
 
     col_item = columnas.get("ÍTEM", "A")
     col_desc = columnas.get("DESCRIPCIÓN", "B")
-    col_un = columnas.get("UN", "D")
+    col_un = columnas.get("UN", "C")       # ✅ NUEVO FORMATO: UN = C
 
     col_valor = columnas.get("VALOR UNITARIO")
     if not col_valor:
-        print("⚠ No se encontró VALOR UNITARIO")
+        for key, letra in columnas.items():
+            if "VALOR UNITARIO" in key:
+                col_valor = letra
+                break
+    if not col_valor:
         return
 
-    col_cantidad = "I"  # fija según tu archivo
+    col_cantidad = "G"  # ✅ NUEVO FORMATO: CANTIDAD = G
 
     for fila in range(10, ws.max_row + 1):
         item = str(ws[f"{col_item}{fila}"].value or "").strip()
@@ -261,7 +263,6 @@ def revisar_acta(
             cantidad = 0.0
 
         if cantidad and not (isinstance(cantidad, float) and math.isnan(cantidad)):
-            # misma lógica de keywords del normal (usando desc_norm en mayúsculas)
             if "EXCAV" in desc_norm:
                 totales_cant["Excavaciones"] += float(cantidad)
             if "RELLEN" in desc_norm:
@@ -340,7 +341,8 @@ def revisar_acta(
     _crear_hoja_cuadro_cantidades(wb, tablas, nombre="CUADRO_CANTIDADES")
 
     wb.save(salida)
-    print(f"✔ Revisado: {os.path.basename(path_archivo)}")
+
+
 
 
 
