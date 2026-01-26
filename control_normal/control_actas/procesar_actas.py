@@ -243,7 +243,7 @@ def revisar_acta(
         print(f"❌ Error al abrir {path_archivo}: {e}")
         return
 
-    nombre_contratista = ws["B6"] or ws["C6"].value or ws["D6"].value or "SIN NOMBRE"
+    nombre_contratista = ws["B6"].value or ws["C6"].value or ws["D6"].value or "SIN NOMBRE"
     columnas = obtener_columnas(ws)
 
     col_item = columnas.get("ÍTEM", "A")
@@ -363,6 +363,11 @@ def revisar_acta(
             if valor_ref is None:
                 valor_ref = valores_referencia.get(descripcion.strip().upper())
 
+            if valor_ref is None:
+                debug["sin_valor_referencia"] += 1
+                continue
+
+
 
         # Comparación (rojo si acta > ref, azul si acta < ref)
         TOL = 0.0
@@ -419,6 +424,7 @@ def revisar_acta(
         
     wb.save(nombre_salida)
     print(f"✔ Revisado: {os.path.basename(path_archivo)}")
+
 
 
 
