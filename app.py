@@ -896,7 +896,7 @@ with tab_resumen:
             )
             if resumen_folder_id:
                 _download_if_exists(service, resumen_folder_id, f"resumen_{nombre_carpeta_mes}.xlsx", resumen_mes_path)
-
+"""
             with st.expander("📦 Debug Drive (solo Ver resúmenes)", expanded=False):
                 st.write("**Ruta Drive base_general:**", f"{proyecto}/control_actas/datos/base_general.xlsx")
                 if datos_folder_id:
@@ -909,7 +909,7 @@ with tab_resumen:
                     st.write("Archivos en resumen_mes:", _list_names(service, resumen_folder_id))
                 else:
                     st.warning("No encontré la carpeta Drive: proyecto/control_actas/resumen/<mes><año>")
-
+"""
         except Exception as e:
             st.warning(f"No pude sincronizar resúmenes desde Drive: {e}")
 
@@ -1010,6 +1010,7 @@ with tab_based:
             else:
                 st.info("valores_referencia no es dict. Muestro tal cual:")
                 st.write(valores_referencia)
+
 
 
 
