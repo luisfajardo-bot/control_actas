@@ -9,7 +9,6 @@ from openpyxl.styles import Font
 from .config import ACTIVIDADES_CRITICAS
 
 
-
 def normalizar(texto):
     if texto is None:
         return None
@@ -59,6 +58,7 @@ def _buscar_critico(desc_norm: str):
                 best_k = k_norm
                 best_precio = precio
     return best_k, best_precio
+
 
 def _clasificar_familia(desc_norm: str) -> str | None:
     """
@@ -144,6 +144,7 @@ def _extraer_cantidades_por_familia(ws_vals, columnas: dict) -> dict[str, list[d
 
     return out
 
+
 def _crear_hoja_cuadro_cantidades(wb, tablas: dict[str, list[dict]], nombre="CUADRO_CANTIDADES"):
     """
     Crea/reemplaza una sola hoja con 4 columnas:
@@ -157,7 +158,7 @@ def _crear_hoja_cuadro_cantidades(wb, tablas: dict[str, list[dict]], nombre="CUA
 
     ws = wb.create_sheet(title=nombre)
 
-    # 2) encabezados en B..E 
+    # 2) encabezados en B..E
     ws["B1"] = "Excavacione"
     ws["C1"] = "Rellenos"
     ws["D1"] = "Concreto MR"
@@ -174,10 +175,10 @@ def _crear_hoja_cuadro_cantidades(wb, tablas: dict[str, list[dict]], nombre="CUA
     # 4) pegar cantidades desde fila 2 hacia abajo
     for familia, col in col_map.items():
         cantidades = [r["cantidad"] for r in tablas.get(familia, [])]
-
         for i, val in enumerate(cantidades, start=2):
             ws[f"{col}{i}"] = val
-    # 5) Fila TOTAL: sumar cada columna 
+
+    # 5) Fila TOTAL: sumar cada columna
     max_len = 0
     for familia in col_map.keys():
         max_len = max(max_len, len(tablas.get(familia, [])))
@@ -211,20 +212,9 @@ def revisar_acta(
         "Concreto MR": 0.0,
         "Concreto estampado": 0.0,
     }
-        # 🐞 DEBUG CONTADORES
-    debug = {
-        "filas_iteradas": 0,
-        "sin_item_o_desc": 0,
-        "valor_unitario_none": 0,
-        "valor_unitario_no_num": 0,
-        "cantidad_no_num": 0,
-        "sin_valor_referencia": 0,
-        "registros_guardados": 0,
-    }
-
 
     try:
-        wb = load_workbook(path_archivo, data_only=False)   
+        wb = load_workbook(path_archivo, data_only=False)
         wb_vals = load_workbook(path_archivo, data_only=True)
 
         hoja_corte = None
@@ -234,13 +224,11 @@ def revisar_acta(
                 break
 
         if not hoja_corte:
-            print(f"❌ No se encontró la hoja 'CORTE' o 'Corte' en {path_archivo}")
             return
 
         ws = wb[hoja_corte]
         ws_vals = wb_vals[hoja_corte]
-    except Exception as e:
-        print(f"❌ Error al abrir {path_archivo}: {e}")
+    except Exception:
         return
 
     nombre_contratista = ws["B6"].value or ws["C6"].value or ws["D6"].value or "SIN NOMBRE"
@@ -248,7 +236,7 @@ def revisar_acta(
 
     col_item = columnas.get("ÍTEM", "A")
     col_desc = columnas.get("DESCRIPCIÓN", "B")
-    col_un = columnas.get("UN", "C")  #Definir formato para dejarla en C
+    col_un = columnas.get("UN", "C")  # Definir formato para dejarla en C
 
     col_valor = columnas.get("VALOR UNITARIO", None)
     if not col_valor:
@@ -257,22 +245,18 @@ def revisar_acta(
                 col_valor = letra
                 break
     if not col_valor:
-        print(f"⚠ No se encontró columna 'VALOR UNITARIO' en {path_archivo}")
         return
 
     col_cantidad_presenta = "G"  # fija para el formato se tiene que es G
 
     fila_inicio = 10
     for fila in range(fila_inicio, ws.max_row + 1):
-        debug["filas_iteradas"] += 1
         item = str(ws[f"{col_item}{fila}"].value or "").strip()
         desc_raw = ws[f"{col_desc}{fila}"].value
         un_raw = ws[f"{col_un}{fila}"].value
 
         if not item or not desc_raw:
-            debug["sin_item_o_desc"] += 1
             continue
-
 
         descripcion = str(desc_raw).strip()
         unidad = normalizar_unidad(un_raw)
@@ -292,31 +276,26 @@ def revisar_acta(
 
         # leer valor unitario desde wb_vals (por fórmulas)
         valor_cell = ws_vals[f"{col_valor}{fila}"].value
-        
         if valor_cell is None:
-            debug["valor_unitario_none"] += 1
             continue
-        
+
         try:
             valor = float(str(valor_cell).replace("$", "").replace(",", ""))
         except Exception:
-            debug["valor_unitario_no_num"] += 1
             continue
 
-        # cantidad presenta (columna I)
+        # cantidad presenta
         cantidad_presenta = ws_vals[f"{col_cantidad_presenta}{fila}"].value
         try:
             cantidad_num = float(cantidad_presenta)
         except (TypeError, ValueError):
-            debug["cantidad_no_num"] += 1
             cantidad_num = 0.0
-
 
         es_nan = isinstance(cantidad_num, float) and math.isnan(cantidad_num)
         if cantidad_num == 0 or es_nan:
             continue
 
-        # ✅ NUEVO: sumar cantidades por categoría (keyword directo)
+        # sumar cantidades por categoría (keyword directo)
         if "excav" in desc_norm:
             totales_cant["Excavaciones"] += float(cantidad_num)
         if "rellen" in desc_norm:
@@ -326,7 +305,7 @@ def revisar_acta(
         if "estamp" in desc_norm:
             totales_cant["Concreto estampado"] += float(cantidad_num)
 
-        # ✅ celda real para marcar color
+        # celda real para marcar color
         celda_valor_unit = ws[f"{col_valor}{fila}"]
 
         # ==========================================
@@ -341,22 +320,19 @@ def revisar_acta(
         #  MODO NORMAL: BD (lookup exacto)
         # ==========================================
         else:
-            # === MODO NORMAL: lookup robusto (acepta dict con llave str o tupla) ===
             if not valores_referencia:
-                debug["sin_valor_referencia"] += 1
                 continue
-        
+
             valor_ref = None
-        
+
             # 1) Caso "nuevo": dict[(desc_norm, unidad)] = precio
             if unidad:
                 valor_ref = valores_referencia.get((desc_norm, unidad))
-        
+
             # 2) Caso "actual tuyo": dict["actividad"] = precio
             if valor_ref is None:
-                # intenta con la descripción normalizada
                 valor_ref = valores_referencia.get(desc_norm)
-        
+
             # 3) Fallbacks por si en BD quedó guardado con mayúsculas / sin normalizar
             if valor_ref is None:
                 valor_ref = valores_referencia.get(descripcion.strip())
@@ -364,16 +340,11 @@ def revisar_acta(
                 valor_ref = valores_referencia.get(descripcion.strip().upper())
 
             if valor_ref is None:
-                debug["sin_valor_referencia"] += 1
                 continue
-
-
 
         # Comparación (rojo si acta > ref, azul si acta < ref)
         TOL = 0.0
-        print(valor_ref)
         diff = float(valor) - float(valor_ref)
-        
 
         if abs(diff) > 1:
             if diff > TOL:
@@ -397,10 +368,8 @@ def revisar_acta(
                 "valor_ajustado": valor_ajustado,
                 "modo": "CRITICO" if modo_critico else "NORMAL",
             })
-            debug["registros_guardados"] += 1
 
-
-    # Guardar totaltes de cantidades para consolidación 
+    # Guardar totaltes de cantidades para consolidación
     base_cantidades.append({
         "anio": anio_actual,
         "mes": mes_nombre,
@@ -421,9 +390,10 @@ def revisar_acta(
     # Hoja de cantidades en archivo verificado
     tablas = _extraer_cantidades_por_familia(ws_vals, columnas)
     _crear_hoja_cuadro_cantidades(wb, tablas, nombre="CUADRO_CANTIDADES")
-        
+
     wb.save(nombre_salida)
-    print(f"✔ Revisado: {os.path.basename(path_archivo)}")
+
+
 
 
 
