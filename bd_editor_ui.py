@@ -115,6 +115,7 @@ def render_bd_editor(
     _require_bd_funcs()
 
     ruta_bd = Path(ruta_bd)
+    print(ruta_bd)
     if not ruta_bd.exists():
         st.warning("No encuentro el archivo local de la BD para editar.")
         return
