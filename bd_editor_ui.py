@@ -82,7 +82,20 @@ def _upload_db_to_drive(
         mime_db = "application/x-sqlite3"
         upload_or_update_file(drive_service, version_folder_id, ruta_bd, mime_db)
         st.success("☁️ BD subida/actualizada en Drive ✅")
+
     except Exception as e:
+        msg = str(e)
+
+        # Caso típico en Streamlit Cloud con Service Accounts
+        if "Service Accounts do not have storage quota" in msg or "storageQuotaExceeded" in msg:
+            st.error("Guardé local, pero no pude subir a Drive por cuota de Service Account.")
+            st.info(
+                "Solución: mueve 'precios_referencia' a una Unidad compartida (Shared Drive) "
+                "y agrega esta Service Account como miembro de esa Unidad. "
+                "En 'Mi unidad' la Service Account no tiene cuota."
+            )
+            return
+
         st.error("Guardé local, pero falló la subida a Drive.")
         st.exception(e)
 
