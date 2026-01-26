@@ -7,7 +7,7 @@ UI auxiliar para editar la BD de precios en vista OFICINA.
 - No altera funciones existentes; se integra desde app.py con una sola llamada.
 
 Permite:
-- Ver BD (actividad, precio, unidad, updated_at)
+- Ver BD (actividad, precio, unidad)
 - Editar precios/unidad en tabla
 - Agregar nuevos ítems (upsert)
 - Cargar un Excel/CSV (actividad, precio, unidad) y hacer upsert
@@ -17,7 +17,7 @@ Permite:
 
 Notas:
 - No implementa borrado para evitar cambios de comportamiento.
-- Se apoya en control_actas.bd_precios (leer_precios / upsert_precios).
+- Se apoya en control_actas.bd_precios (leer_precios / upsert_precios / cargar_valores_referencia).
 """
 
 from __future__ import annotations
@@ -28,20 +28,64 @@ import streamlit as st
 
 # Import robusto desde el backend activo (control_actas)
 try:
-    from control_actas.bd_precios import leer_precios, upsert_precios, cargar_valores_referencia
+    from control_actas.bd_precios import (
+        leer_precios,
+        upsert_precios,
+        cargar_valores_referencia,
+    )
 except Exception:  # pragma: no cover
     leer_precios = None
     upsert_precios = None
+    cargar_valores_referencia = None
 
 
 def _require_bd_funcs():
-    if leer_precios is None or upsert_precios is None:
+    if leer_precios is None or upsert_precios is None or cargar_valores_referencia is None:
         st.error(
-            "No pude importar 'leer_precios' / 'upsert_precios' desde control_actas.bd_precios. "
-            "Verifica que el backend activo expone ese módulo."
+            "No pude importar 'leer_precios' / 'upsert_precios' / 'cargar_valores_referencia' "
+            "desde control_actas.bd_precios. Verifica que el backend activo expone ese módulo."
         )
         st.stop()
-#HELPER
+
+
+def _upload_db_to_drive(
+    *,
+    ruta_bd: Path,
+    is_cloud: bool,
+    precios_version: str,
+    drive_service=None,
+    drive_root_id: str | None = None,
+    find_child_folder=None,
+    upload_or_update_file=None,
+) -> None:
+    """Sube/actualiza el archivo .db en Drive si estamos en Cloud y hay utilidades disponibles."""
+    if not is_cloud:
+        return
+
+    if drive_service is None or drive_root_id is None:
+        st.warning("Estoy en Cloud, pero no recibí credenciales/servicio de Drive para subir la BD.")
+        return
+
+    if find_child_folder is None or upload_or_update_file is None:
+        st.warning("Faltan funciones de Drive (find_child_folder / upload_or_update_file).")
+        return
+
+    try:
+        precios_root_id = find_child_folder(drive_service, drive_root_id, "precios_referencia")
+        if not precios_root_id:
+            raise FileNotFoundError("No existe carpeta 'precios_referencia' en Drive.")
+
+        version_folder_id = find_child_folder(drive_service, precios_root_id, str(precios_version))
+        if not version_folder_id:
+            raise FileNotFoundError(f"No existe carpeta de versión '{precios_version}' en Drive.")
+
+        mime_db = "application/x-sqlite3"
+        upload_or_update_file(drive_service, version_folder_id, ruta_bd, mime_db)
+        st.success("☁️ BD subida/actualizada en Drive ✅")
+    except Exception as e:
+        st.error("Guardé local, pero falló la subida a Drive.")
+        st.exception(e)
+
 
 def _bootstrap_precios_desde_legacy(db_path: Path) -> bool:
     """
@@ -61,7 +105,6 @@ def _bootstrap_precios_desde_legacy(db_path: Path) -> bool:
     )
     upsert_precios(db_path, df_boot)
     return True
-#----------------
 
 
 def _coerce_df_schema(df: pd.DataFrame) -> pd.DataFrame:
@@ -82,10 +125,12 @@ def _coerce_df_schema(df: pd.DataFrame) -> pd.DataFrame:
     if col_act is None or col_pre is None:
         raise ValueError("El archivo debe tener al menos columnas 'actividad' y 'precio' (o equivalentes).")
 
-    out = pd.DataFrame({
-        "actividad": df2[col_act],
-        "precio": df2[col_pre],
-    })
+    out = pd.DataFrame(
+        {
+            "actividad": df2[col_act],
+            "precio": df2[col_pre],
+        }
+    )
 
     if col_uni is not None:
         out["unidad"] = df2[col_uni]
@@ -115,7 +160,6 @@ def render_bd_editor(
     _require_bd_funcs()
 
     ruta_bd = Path(ruta_bd)
-    print(ruta_bd)
     if not ruta_bd.exists():
         st.warning("No encuentro el archivo local de la BD para editar.")
         return
@@ -126,23 +170,37 @@ def render_bd_editor(
     try:
         df = leer_precios(ruta_bd)
 
-        # Si está vacía, pero arriba sí hay valores (legacy), migra a tabla nueva
+        # Si está vacía pero existen datos legacy, migra a la tabla nueva 'precios'
         if df.empty:
-            migro = _bootstrap_precios_desde_legacy(Path(ruta_bd))
+            migro = _bootstrap_precios_desde_legacy(ruta_bd)
             if migro:
+                # En Cloud: subir inmediatamente la BD migrada, para que no se pierda en el rerun
+                _upload_db_to_drive(
+                    ruta_bd=ruta_bd,
+                    is_cloud=is_cloud,
+                    precios_version=precios_version,
+                    drive_service=drive_service,
+                    drive_root_id=drive_root_id,
+                    find_child_folder=find_child_folder,
+                    upload_or_update_file=upload_or_update_file,
+                )
                 df = leer_precios(ruta_bd)
 
     except Exception as e:
-
         st.error("No pude leer la BD de precios.")
         st.exception(e)
         return
 
     colf1, colf2 = st.columns([2, 1])
     with colf1:
-        q = st.text_input("Buscar por texto (actividad)", value="", placeholder="Ej: excavación, concreto, ...")
+        q = st.text_input(
+            "Buscar por texto (actividad)",
+            value="",
+            placeholder="Ej: excavación, concreto, ...",
+            key=f"bd_q_{precios_version}",
+        )
     with colf2:
-        solo_sin_unidad = st.checkbox("Solo sin unidad", value=False)
+        solo_sin_unidad = st.checkbox("Solo sin unidad", value=False, key=f"bd_su_{precios_version}")
 
     df_view = df.copy()
     if q.strip():
@@ -173,27 +231,57 @@ def render_bd_editor(
         with c1:
             new_act = st.text_input("Actividad", key=f"new_act_{precios_version}")
         with c2:
-            new_pre = st.number_input("Precio", min_value=0.0, value=0.0, step=100.0, key=f"new_pre_{precios_version}")
+            new_pre = st.number_input(
+                "Precio",
+                min_value=0.0,
+                value=0.0,
+                step=100.0,
+                key=f"new_pre_{precios_version}",
+            )
         with c3:
             new_uni = st.text_input("Unidad (opcional)", key=f"new_uni_{precios_version}")
 
         if st.button("Agregar / actualizar", key=f"btn_add_{precios_version}"):
             try:
-                df_add = pd.DataFrame([{
-                    "actividad": (new_act or "").strip(),
-                    "precio": float(new_pre),
-                    "unidad": (new_uni or "").strip() or None,
-                }])
+                df_add = pd.DataFrame(
+                    [
+                        {
+                            "actividad": (new_act or "").strip(),
+                            "precio": float(new_pre),
+                            "unidad": (new_uni or "").strip() or None,
+                        }
+                    ]
+                )
+
+                # Guardar local
                 upsert_precios(ruta_bd, df_add)
                 st.success("Listo: ítem guardado en la BD local ✅")
+
+                # Subir a Drive en Cloud para que no se pierda en rerun
+                _upload_db_to_drive(
+                    ruta_bd=ruta_bd,
+                    is_cloud=is_cloud,
+                    precios_version=precios_version,
+                    drive_service=drive_service,
+                    drive_root_id=drive_root_id,
+                    find_child_folder=find_child_folder,
+                    upload_or_update_file=upload_or_update_file,
+                )
+
                 st.rerun()
+
             except Exception as e:
                 st.error("No pude guardar el ítem.")
                 st.exception(e)
 
     with st.expander("📥 Carga masiva (Excel/CSV)"):
         st.caption("Columnas esperadas: actividad, precio, unidad (unidad es opcional).")
-        up = st.file_uploader("Subir archivo", type=["xlsx", "csv"], accept_multiple_files=False, key=f"uploader_{precios_version}")
+        up = st.file_uploader(
+            "Subir archivo",
+            type=["xlsx", "csv"],
+            accept_multiple_files=False,
+            key=f"uploader_{precios_version}",
+        )
 
         if up is not None:
             try:
@@ -201,14 +289,30 @@ def render_bd_editor(
                     raw = pd.read_csv(up)
                 else:
                     raw = pd.read_excel(up)
+
                 df_up = _coerce_df_schema(raw)
+
                 st.write("Vista previa (primeras 20):")
                 st.dataframe(df_up.head(20), use_container_width=True, hide_index=True)
 
                 if st.button("Aplicar carga (upsert)", key=f"btn_mass_{precios_version}"):
+                    # Guardar local
                     upsert_precios(ruta_bd, df_up)
                     st.success(f"Se aplicó upsert de {len(df_up)} filas en la BD local ✅")
+
+                    # Subir a Drive en Cloud
+                    _upload_db_to_drive(
+                        ruta_bd=ruta_bd,
+                        is_cloud=is_cloud,
+                        precios_version=precios_version,
+                        drive_service=drive_service,
+                        drive_root_id=drive_root_id,
+                        find_child_folder=find_child_folder,
+                        upload_or_update_file=upload_or_update_file,
+                    )
+
                     st.rerun()
+
             except Exception as e:
                 st.error("No pude procesar el archivo.")
                 st.exception(e)
@@ -229,6 +333,7 @@ def render_bd_editor(
             df_save = edited.copy()
             df_save["actividad"] = df_save["actividad"].astype(str).str.strip()
             df_save["precio"] = pd.to_numeric(df_save["precio"], errors="coerce")
+
             if "unidad" in df_save.columns:
                 df_save["unidad"] = df_save["unidad"].astype(str).replace({"nan": ""}).str.strip()
                 df_save.loc[df_save["unidad"] == "", "unidad"] = None
@@ -238,25 +343,15 @@ def render_bd_editor(
 
             st.success("Cambios guardados en la BD local ✅")
 
-            if is_cloud:
-                if drive_service is None or drive_root_id is None:
-                    st.warning("Estoy en Cloud, pero no recibí credenciales/servicio de Drive para subir la BD.")
-                elif find_child_folder is None or upload_or_update_file is None:
-                    st.warning("Faltan funciones de Drive (find_child_folder / upload_or_update_file).")
-                else:
-                    try:
-                        precios_root_id = find_child_folder(drive_service, drive_root_id, "precios_referencia")
-                        if not precios_root_id:
-                            raise FileNotFoundError("No existe carpeta 'precios_referencia' en Drive.")
-                        version_folder_id = find_child_folder(drive_service, precios_root_id, str(precios_version))
-                        if not version_folder_id:
-                            raise FileNotFoundError(f"No existe carpeta de versión '{precios_version}' en Drive.")
-                        mime_db = "application/x-sqlite3"
-                        upload_or_update_file(drive_service, version_folder_id, ruta_bd, mime_db)
-                        st.success("☁️ BD subida/actualizada en Drive ✅")
-                    except Exception as e:
-                        st.error("Guardé local, pero falló la subida a Drive.")
-                        st.exception(e)
+            _upload_db_to_drive(
+                ruta_bd=ruta_bd,
+                is_cloud=is_cloud,
+                precios_version=precios_version,
+                drive_service=drive_service,
+                drive_root_id=drive_root_id,
+                find_child_folder=find_child_folder,
+                upload_or_update_file=upload_or_update_file,
+            )
 
             st.rerun()
 
