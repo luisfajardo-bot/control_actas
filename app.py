@@ -247,6 +247,35 @@ def vista_selector():
     """Pantalla inicial + control simple de acceso para OFICINA."""
     _init_state()
 
+    # ✅ Si ya hay vista elegida, NO mostramos la portada.
+    # Solo validamos acceso si es OFICINA y falta la clave.
+    if st.session_state["vista"] is not None:
+        if st.session_state["vista"] == "OFICINA" and not st.session_state["oficina_ok"]:
+            st.markdown("---")
+            st.subheader("🔐 Acceso OFICINA")
+
+            clave = st.text_input("Palabra clave", type="password")
+            oficina_key = st.secrets["OFICINA_KEY"] if "OFICINA_KEY" in st.secrets else None
+
+            if st.button("Validar"):
+                if oficina_key is None:
+                    st.error("No se encontró OFICINA_KEY en Secrets de Streamlit Cloud.")
+                    st.stop()
+
+                if (clave or "").strip() == str(oficina_key).strip():
+                    st.session_state["oficina_ok"] = True
+                    st.success("Acceso concedido ✅")
+                    st.rerun()
+                else:
+                    st.error("Clave incorrecta ❌")
+                    st.stop()
+
+            st.stop()
+
+        # Vista ya elegida y OK -> continuar app normal sin mostrar portada
+        return
+
+    # ✅ Si NO hay vista elegida, mostramos SOLO la portada
     st.title("Control de Actas - ICEIN")
     st.caption("Selecciona tu vista de trabajo 👇")
 
@@ -258,6 +287,7 @@ def vista_selector():
         st.write("- Requiere clave para entrar a modo de edición")
         if st.button("Entrar a OFICINA"):
             st.session_state["vista"] = "OFICINA"
+            st.rerun()
 
     with c2:
         st.subheader("🧰 Ingenieros de Subcontratos")
@@ -265,32 +295,11 @@ def vista_selector():
         if st.button("Entrar a Subcontratos"):
             st.session_state["vista"] = "SUBCONTRATOS"
             st.session_state["oficina_ok"] = False
+            st.rerun()
 
-    if st.session_state["vista"] is None:
-        st.stop()
+    # ✅ Sin vista aún: no dejamos que siga el app
+    st.stop()
 
-    if st.session_state["vista"] == "OFICINA" and not st.session_state["oficina_ok"]:
-        st.markdown("---")
-        st.subheader("🔐 Acceso OFICINA")
-
-        clave = st.text_input("Palabra clave", type="password")
-        oficina_key = st.secrets["OFICINA_KEY"] if "OFICINA_KEY" in st.secrets else None
-
-        if st.button("Validar"):
-            if oficina_key is None:
-                st.error("No se encontró OFICINA_KEY en Secrets de Streamlit Cloud.")
-                st.stop()
-
-            if (clave or "").strip() == str(oficina_key).strip():
-                st.session_state["oficina_ok"] = True
-                st.success("Acceso concedido ✅")
-                st.rerun()
-            else:
-                st.error("Clave incorrecta ❌")
-                st.stop()
-
-        if st.session_state["vista"] == "OFICINA" and not st.session_state["oficina_ok"]:
-            st.stop()
 
 
 def render_subcontratos_uploader():
@@ -1020,6 +1029,7 @@ with tab_based:
             else:
                 st.info("valores_referencia no es dict. Muestro tal cual:")
                 st.write(valores_referencia)
+
 
 
 
