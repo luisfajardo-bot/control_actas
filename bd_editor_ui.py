@@ -28,7 +28,7 @@ import streamlit as st
 
 # Import robusto desde el backend activo (control_actas)
 try:
-    from control_actas.bd_precios import leer_precios, upsert_precios
+    from control_actas.bd_precios import leer_precios, upsert_precios, cargar_valores_referencia
 except Exception:  # pragma: no cover
     leer_precios = None
     upsert_precios = None
@@ -41,6 +41,27 @@ def _require_bd_funcs():
             "Verifica que el backend activo expone ese módulo."
         )
         st.stop()
+#HELPER
+
+def _bootstrap_precios_desde_legacy(db_path: Path) -> bool:
+    """
+    Si la tabla nueva 'precios' está vacía pero existen datos legacy,
+    los copia a 'precios' mediante upsert. Retorna True si migró algo.
+    """
+    try:
+        legacy = cargar_valores_referencia(db_path) or {}
+    except Exception:
+        legacy = {}
+
+    if not legacy:
+        return False
+
+    df_boot = pd.DataFrame(
+        [{"actividad": k, "precio": v, "unidad": None} for k, v in legacy.items()]
+    )
+    upsert_precios(db_path, df_boot)
+    return True
+#----------------
 
 
 def _coerce_df_schema(df: pd.DataFrame) -> pd.DataFrame:
@@ -103,7 +124,15 @@ def render_bd_editor(
 
     try:
         df = leer_precios(ruta_bd)
+
+        # Si está vacía, pero arriba sí hay valores (legacy), migra a tabla nueva
+        if df.empty:
+            migro = _bootstrap_precios_desde_legacy(Path(ruta_bd))
+            if migro:
+                df = leer_precios(ruta_bd)
+
     except Exception as e:
+
         st.error("No pude leer la BD de precios.")
         st.exception(e)
         return
