@@ -1030,6 +1030,38 @@ with tab_based:
                 st.info("valores_referencia no es dict. Muestro tal cual:")
                 st.write(valores_referencia)
 
+    # ==================================================
+    # ✅ Editor de BD (SOLO OFICINA)
+    # ==================================================
+    if VISTA == "OFICINA" and (not modo_critico) and ruta_bd:
+        try:
+            from bd_editor_ui import render_bd_editor
+        except Exception as e:
+            st.error("No pude cargar el módulo de edición de BD (bd_editor_ui.py).")
+            st.exception(e)
+        else:
+            service_bd = None
+            root_id_bd = None
+            if IS_CLOUD:
+                try:
+                    service_bd = get_drive_service()
+                    root_id_bd = st.secrets["DRIVE_ROOT_FOLDER_ID"]
+                except Exception:
+                    service_bd = None
+                    root_id_bd = None
+
+            render_bd_editor(
+                ruta_bd=ruta_bd,
+                is_cloud=IS_CLOUD,
+                precios_version=str(precios_version),
+                drive_service=service_bd,
+                drive_root_id=root_id_bd,
+                find_child_folder=find_child_folder,
+                upload_or_update_file=upload_or_update_file,
+            )
+
+
+
 
 
 
