@@ -491,7 +491,7 @@ MESES = [
 # Sidebar filtros
 # ==================================================
 st.sidebar.title("Filtros")
-st.sidebar.markdown(f"**Vista activa: 🧰** {VISTA}")
+st.sidebar.markdown(f"**Vista activa: 📍** {VISTA}")
 st.sidebar.markdown("---")
 
 if st.sidebar.button("↩ Cambiar vista"):
@@ -1020,6 +1020,7 @@ with tab_based:
             else:
                 st.info("valores_referencia no es dict. Muestro tal cual:")
                 st.write(valores_referencia)
+
 
 
 
