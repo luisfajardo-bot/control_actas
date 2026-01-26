@@ -869,16 +869,15 @@ with tab_resumen:
         download_file(service, fid, local_path)
         return True
 
-    def _list_names(service, folder_id: str) -> list[str]:
-        try:
-            items = list_files_in_folder(service, folder_id)
-            return [it.get("name", "") for it in items]
-        except Exception:
-            return []
-
-    base_general_path = os.path.join(BASE_ROOT, proyecto, "control_actas", "datos", "base_general.xlsx")
-    carpeta_resumen_mes = os.path.join(BASE_ROOT, proyecto, "control_actas", "resumen", nombre_carpeta_mes)
-    resumen_mes_path = os.path.join(carpeta_resumen_mes, f"resumen_{nombre_carpeta_mes}.xlsx")
+    base_general_path = os.path.join(
+        BASE_ROOT, proyecto, "control_actas", "datos", "base_general.xlsx"
+    )
+    carpeta_resumen_mes = os.path.join(
+        BASE_ROOT, proyecto, "control_actas", "resumen", nombre_carpeta_mes
+    )
+    resumen_mes_path = os.path.join(
+        carpeta_resumen_mes, f"resumen_{nombre_carpeta_mes}.xlsx"
+    )
 
     if IS_CLOUD:
         try:
@@ -889,27 +888,26 @@ with tab_resumen:
                 service, root_id, [proyecto, "control_actas", "datos"]
             )
             if datos_folder_id:
-                _download_if_exists(service, datos_folder_id, "base_general.xlsx", base_general_path)
+                _download_if_exists(
+                    service,
+                    datos_folder_id,
+                    "base_general.xlsx",
+                    base_general_path,
+                )
 
             resumen_folder_id = _drive_folder_path_to_id(
-                service, root_id, [proyecto, "control_actas", "resumen", nombre_carpeta_mes]
+                service,
+                root_id,
+                [proyecto, "control_actas", "resumen", nombre_carpeta_mes],
             )
             if resumen_folder_id:
-                _download_if_exists(service, resumen_folder_id, f"resumen_{nombre_carpeta_mes}.xlsx", resumen_mes_path)
-"""
-            with st.expander("📦 Debug Drive (solo Ver resúmenes)", expanded=False):
-                st.write("**Ruta Drive base_general:**", f"{proyecto}/control_actas/datos/base_general.xlsx")
-                if datos_folder_id:
-                    st.write("Archivos en datos:", _list_names(service, datos_folder_id))
-                else:
-                    st.warning("No encontré la carpeta Drive: proyecto/control_actas/datos")
+                _download_if_exists(
+                    service,
+                    resumen_folder_id,
+                    f"resumen_{nombre_carpeta_mes}.xlsx",
+                    resumen_mes_path,
+                )
 
-                st.write("**Ruta Drive resumen mensual:**", f"{proyecto}/control_actas/resumen/{nombre_carpeta_mes}/resumen_{nombre_carpeta_mes}.xlsx")
-                if resumen_folder_id:
-                    st.write("Archivos en resumen_mes:", _list_names(service, resumen_folder_id))
-                else:
-                    st.warning("No encontré la carpeta Drive: proyecto/control_actas/resumen/<mes><año>")
-"""
         except Exception as e:
             st.warning(f"No pude sincronizar resúmenes desde Drive: {e}")
 
@@ -938,16 +936,27 @@ with tab_resumen:
             if col_contratista:
                 contratista_sel = st.selectbox(
                     "Filtrar por contratista (base general)",
-                    ["(Todos)"] + sorted(df_base[col_contratista].dropna().astype(str).unique().tolist()),
+                    ["(Todos)"]
+                    + sorted(
+                        df_base[col_contratista]
+                        .dropna()
+                        .astype(str)
+                        .unique()
+                        .tolist()
+                    ),
                 )
 
                 if contratista_sel != "(Todos)":
                     st.dataframe(
-                        formatear_numeros_df(df_base[df_base[col_contratista].astype(str) == str(contratista_sel)]),
+                        formatear_numeros_df(
+                            df_base[df_base[col_contratista].astype(str) == str(contratista_sel)]
+                        ),
                         use_container_width=True,
                     )
             else:
-                st.warning(f"No se encontró columna de contratista. Columnas: {list(df_base.columns)}")
+                st.warning(
+                    f"No se encontró columna de contratista. Columnas: {list(df_base.columns)}"
+                )
 
     if os.path.exists(resumen_mes_path):
         with col_b:
@@ -966,6 +975,7 @@ with tab_resumen:
         st.dataframe(formatear_numeros_df(df_cat), use_container_width=True)
     except Exception:
         st.info("No existe aún la hoja 'CANTIDADES'. Ejecuta el proceso.")
+
 
 
 # ==================================================
@@ -1010,6 +1020,7 @@ with tab_based:
             else:
                 st.info("valores_referencia no es dict. Muestro tal cual:")
                 st.write(valores_referencia)
+
 
 
 
