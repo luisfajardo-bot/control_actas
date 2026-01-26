@@ -366,7 +366,9 @@ def revisar_acta(
 
         # Comparación (rojo si acta > ref, azul si acta < ref)
         TOL = 0.0
+        print(valor_ref)
         diff = float(valor) - float(valor_ref)
+        
 
         if abs(diff) > 1:
             if diff > TOL:
@@ -417,6 +419,7 @@ def revisar_acta(
         
     wb.save(nombre_salida)
     print(f"✔ Revisado: {os.path.basename(path_archivo)}")
+
 
 
 
