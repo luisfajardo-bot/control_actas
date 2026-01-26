@@ -94,8 +94,8 @@ def _extraer_cantidades_por_familia(ws_vals, columnas: dict) -> dict[str, list[d
     """
     col_item = columnas.get("ÍTEM", "A")
     col_desc = columnas.get("DESCRIPCIÓN", "B")
-    col_un = columnas.get("UN", "C")      # ✅ NUEVO FORMATO: UN = C
-    col_cantidad = "G"                   # ✅ NUEVO FORMATO: CANTIDAD = G
+    col_un = columnas.get("UN", "C")      
+    col_cantidad = "G"                   
 
     out: dict[str, list[dict]] = {
         "RELLENOS": [],
@@ -192,7 +192,7 @@ def revisar_acta(
     mes_nombre: str,
     carpeta_salida_mes: str,
     base_registro: list,
-    base_cantidades: list | None = None,  # ✅ NUEVO
+    base_cantidades: list | None = None,  
 ):
     try:
         wb = load_workbook(path_archivo, data_only=False)
@@ -213,10 +213,10 @@ def revisar_acta(
     except Exception:
         return
 
-    nombre_contratista = ws["C6"].value or ws["D6"].value or "SIN NOMBRE"
+    nombre_contratista = ws["B6"].value or ws["C6"].value or ws["D6"].value or "SIN NOMBRE"
     columnas = obtener_columnas(ws)
 
-    # ✅ acumuladores (igual lógica del normal)
+    # Contadores de cantidades
     totales_cant = {
         "Excavaciones": 0.0,
         "Rellenos": 0.0,
@@ -226,7 +226,7 @@ def revisar_acta(
 
     col_item = columnas.get("ÍTEM", "A")
     col_desc = columnas.get("DESCRIPCIÓN", "B")
-    col_un = columnas.get("UN", "C")       # ✅ NUEVO FORMATO: UN = C
+    col_un = columnas.get("UN", "C")       
 
     col_valor = columnas.get("VALOR UNITARIO")
     if not col_valor:
@@ -237,7 +237,7 @@ def revisar_acta(
     if not col_valor:
         return
 
-    col_cantidad = "G"  # ✅ NUEVO FORMATO: CANTIDAD = G
+    col_cantidad = "G"  
 
     for fila in range(10, ws.max_row + 1):
         item = str(ws[f"{col_item}{fila}"].value or "").strip()
@@ -341,6 +341,7 @@ def revisar_acta(
     _crear_hoja_cuadro_cantidades(wb, tablas, nombre="CUADRO_CANTIDADES")
 
     wb.save(salida)
+
 
 
 
