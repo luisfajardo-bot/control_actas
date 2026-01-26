@@ -94,8 +94,8 @@ def _extraer_cantidades_por_familia(ws_vals, columnas: dict) -> dict[str, list[d
     """
     col_item = columnas.get("ÍTEM", "A")
     col_desc = columnas.get("DESCRIPCIÓN", "B")
-    col_un = columnas.get("UN", "D")
-    col_cantidad = "I"  # fija según tu archivo
+    col_un = columnas.get("UN", "C")
+    col_cantidad = "G"  # fija, para mantener formato
 
     out: dict[str, list[dict]] = {
         "RELLENOS": [],
@@ -157,7 +157,7 @@ def _crear_hoja_cuadro_cantidades(wb, tablas: dict[str, list[dict]], nombre="CUA
 
     ws = wb.create_sheet(title=nombre)
 
-    # 2) encabezados en B..E (como tu imagen)
+    # 2) encabezados en B..E 
     ws["B1"] = "Excavacione"
     ws["C1"] = "Rellenos"
     ws["D1"] = "Concreto MR"
@@ -177,14 +177,14 @@ def _crear_hoja_cuadro_cantidades(wb, tablas: dict[str, list[dict]], nombre="CUA
 
         for i, val in enumerate(cantidades, start=2):
             ws[f"{col}{i}"] = val
-    # 5) Fila TOTAL: sumar cada columna (B..E)
+    # 5) Fila TOTAL: sumar cada columna 
     max_len = 0
     for familia in col_map.keys():
         max_len = max(max_len, len(tablas.get(familia, [])))
 
     fila_total = 2 + max_len  # debajo del último dato
 
-    # (opcional) etiqueta en A
+    # Escritura de "TOTAL"
     ws[f"A{fila_total}"] = "TOTAL"
 
     for col in ["B", "C", "D", "E"]:
@@ -201,10 +201,10 @@ def revisar_acta(
     mes_nombre: str,
     carpeta_salida_mes: str,
     base_registro: list,
-    base_cantidades: list,      # ✅ NUEVO: para guardar totales por contratista/categoría
+    base_cantidades: list,      # Para guardar cantidades totales por contratista/categoría
     modo_critico: bool = False,
 ):
-    # ✅ NUEVO: acumuladores por acta
+    # Contadores de cantidades cumuladores por acta
     totales_cant = {
         "Excavaciones": 0.0,
         "Rellenos": 0.0,
@@ -224,8 +224,8 @@ def revisar_acta(
 
 
     try:
-        wb = load_workbook(path_archivo, data_only=False)     # para escribir estilos
-        wb_vals = load_workbook(path_archivo, data_only=True) # para leer valores calculados
+        wb = load_workbook(path_archivo, data_only=False)   
+        wb_vals = load_workbook(path_archivo, data_only=True)
 
         hoja_corte = None
         for nombre in ["CORTE", "Corte", "Corte ", "corte"]:
@@ -243,12 +243,12 @@ def revisar_acta(
         print(f"❌ Error al abrir {path_archivo}: {e}")
         return
 
-    nombre_contratista = ws["C6"].value or ws["D6"].value or "SIN NOMBRE"
+    nombre_contratista = ws["B6"] or ws["C6"].value or ws["D6"].value or "SIN NOMBRE"
     columnas = obtener_columnas(ws)
 
     col_item = columnas.get("ÍTEM", "A")
     col_desc = columnas.get("DESCRIPCIÓN", "B")
-    col_un = columnas.get("UN", "D")  # en tu archivo suele ser D
+    col_un = columnas.get("UN", "C")  #Definir formato para dejarla en C
 
     col_valor = columnas.get("VALOR UNITARIO", None)
     if not col_valor:
@@ -260,7 +260,7 @@ def revisar_acta(
         print(f"⚠ No se encontró columna 'VALOR UNITARIO' en {path_archivo}")
         return
 
-    col_cantidad_presenta = "I"  # fija
+    col_cantidad_presenta = "G"  # fija para el formato se tiene que es G
 
     fila_inicio = 10
     for fila in range(fila_inicio, ws.max_row + 1):
@@ -362,10 +362,6 @@ def revisar_acta(
                 valor_ref = valores_referencia.get(descripcion.strip())
             if valor_ref is None:
                 valor_ref = valores_referencia.get(descripcion.strip().upper())
-        
-            if valor_ref is None:
-                debug["sin_valor_referencia"] += 1
-                continue
 
 
         # Comparación (rojo si acta > ref, azul si acta < ref)
@@ -397,7 +393,7 @@ def revisar_acta(
             debug["registros_guardados"] += 1
 
 
-    # ✅ NUEVO: guardar totales por acta para consolidar luego por contratista
+    # Guardar totaltes de cantidades para consolidación 
     base_cantidades.append({
         "anio": anio_actual,
         "mes": mes_nombre,
@@ -415,14 +411,13 @@ def revisar_acta(
         os.path.basename(path_archivo).replace(".xlsx", "_verificado.xlsx")
     )
 
-    # (lo que ya tenías) hoja de cuadro de cantidades en el verificado
+    # Hoja de cantidades en archivo verificado
     tablas = _extraer_cantidades_por_familia(ws_vals, columnas)
     _crear_hoja_cuadro_cantidades(wb, tablas, nombre="CUADRO_CANTIDADES")
-    
-    print("🐞 DEBUG revisar_acta:", os.path.basename(path_archivo), debug)
-    
+        
     wb.save(nombre_salida)
     print(f"✔ Revisado: {os.path.basename(path_archivo)}")
+
 
 
 
